@@ -20,7 +20,7 @@ from geometry_msgs.msg import (
 
 
 class Waypoints(object):
-    def __init__(self, limb, speed, accuracy, distance):
+    def __init__(self, limb, speed, accuracy, distance, loops):
         # Create baxter_interface limb instance
         self._arm = limb
         self._limb = baxter_interface.Limb(self._arm)
@@ -29,6 +29,7 @@ class Waypoints(object):
         self._iksvc = rospy.ServiceProxy(self._ik_srv, SolvePositionIK)
         self._ikreq = SolvePositionIKRequest()
 	self._hover_distance = distance
+	self._num_loops = loops
 
         # Parameters which will describe joint position moves
         self._speed = speed
@@ -49,6 +50,11 @@ class Waypoints(object):
 
         # Create Navigator I/O
         self._navigator_io = baxter_interface.Navigator(self._arm)
+	self._overhead_orientation = Quaternion(
+                             x=-0.0249590815779,
+                             y=0.999649402929,
+                             z=0.00737916180073,
+                             w=0.00486450832011)
 
     def _record_waypoint(self, value):
         """
@@ -107,7 +113,8 @@ class Waypoints(object):
 		pose['position'] = Point(x=pose['position'].x, y=pose['position'].y, z=pose['position'].z+offset)
         approach_pose = Pose()
         approach_pose.position = pose['position']
-        approach_pose.orientation = pose['orientation']
+	approach_pose.orientation = self._overhead_orientation
+        #approach_pose.orientation = pose['orientation']
 	pose = approach_pose
 	print(pose)
         hdr = Header(stamp=rospy.Time.now(), frame_id='base')
@@ -160,44 +167,45 @@ class Waypoints(object):
 	print(waypointJP)
 	print("=== Approaches ===")
 	print(waypointApproach)
-        # Loop through rest of waypoints
-	for i in range(len(waypointJP[1:])-1):
-	    waypoint = waypointJP[i+1]
-	    waypointA = waypointApproach[i+1]
-            if rospy.is_shutdown():
-                break
-            # Move to domino placement
-	    print("Moving ti Approahc point")
-            self._limb.set_joint_position_speed(0.8)
-            self._limb.move_to_joint_positions(waypointA)
-	    print("Moving to real point")
-            self._limb.set_joint_position_speed(0.3)
-            self._limb.move_to_joint_positions(waypoint)
+	for j in range(self._num_loops):
+        	# Loop through rest of waypoints
+		for i in range(len(waypointJP[1:])-1):
+		    waypoint = waypointJP[i+1]
+		    waypointA = waypointApproach[i+1]
+        	    if rospy.is_shutdown():
+        	        break
+        	    # Move to domino placement
+		    print("Moving ti Approahc point")
+        	    self._limb.set_joint_position_speed(0.8)
+        	    self._limb.move_to_joint_positions(waypointA)
+		    print("Moving to real point")
+        	    self._limb.set_joint_position_speed(0.3)
+        	    self._limb.move_to_joint_positions(waypoint)
+	
+	            # Drop off domino
+	            rospy.sleep(1.0)
+	            self._gripper.open()
+		    print("About to move to approach point")
+	            rospy.sleep(1.0)
+	            self._limb.move_to_joint_positions(waypointA)
+	
+	
+        	    # Head to home
+		    print("Moving to home approach")
+        	    self._limb.set_joint_position_speed(0.8)
+        	    self._limb.move_to_joint_positions(homeWaypointApproach)
+		    print("Moving to home")
+	            self._limb.set_joint_position_speed(0.3)
+	            self._limb.move_to_joint_positions(homeWaypoint)
+	
+	            # Grab next domino
+	            rospy.sleep(1.0)
+	            self._gripper.close()
+		    print("Moving to home approach")
+	            rospy.sleep(1.0)
 
-            # Drop off domino
-            rospy.sleep(1.0)
-            self._gripper.open()
-	    print("About to move to approach point")
-            rospy.sleep(1.0)
-            self._limb.move_to_joint_positions(waypointA)
-
-
-            # Head to home
-	    print("Moving to home approach")
-            self._limb.set_joint_position_speed(0.8)
-            self._limb.move_to_joint_positions(homeWaypointApproach)
-	    print("Moving to home")
-            self._limb.set_joint_position_speed(0.3)
-            self._limb.move_to_joint_positions(homeWaypoint)
-
-            # Grab next domino
-            rospy.sleep(1.0)
-            self._gripper.close()
-	    print("Moving to home approach")
-            rospy.sleep(1.0)
-
-            # Step away
-            self._limb.move_to_joint_positions(homeWaypointApproach)
+        	    # Step away
+        	    self._limb.move_to_joint_positions(homeWaypointApproach)
 
 
 
@@ -251,7 +259,7 @@ def main():
     print("Initializing node... ")
     rospy.init_node("rsdk_joint_position_waypoints_%s" % (args.limb,))
 
-    waypoints = Waypoints(args.limb, args.speed, args.accuracy, args.distance)
+    waypoints = Waypoints(args.limb, args.speed, args.accuracy, args.distance, args.loops)
 
     # Register clean shutdown
     rospy.on_shutdown(waypoints.clean_shutdown)
