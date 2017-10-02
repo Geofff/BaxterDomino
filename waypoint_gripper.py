@@ -8,14 +8,14 @@ import rospy
 import baxter_interface
 from std_msgs.msg import Header
 from baxter_core_msgs.srv import (
-	SolvePositionIK,
-	SolvePositionIKRequest,
+    SolvePositionIK,
+    SolvePositionIKRequest,
 )
 from geometry_msgs.msg import (
-	PoseStamped,
-	Pose,
-	Point,
-	Quaternion,
+    PoseStamped,
+    Pose,
+    Point,
+    Quaternion,
 )
 
 
@@ -28,13 +28,15 @@ class Waypoints(object):
         self._ik_srv = "ExternalTools/" + limb + "/PositionKinematicsNode/IKService"
         self._iksvc = rospy.ServiceProxy(self._ik_srv, SolvePositionIK)
         self._ikreq = SolvePositionIKRequest()
-	self._hover_distance = distance
-	self._num_loops = loops
+        self._hover_distance = distance
+        self._num_loops = loops
 
         # Parameters which will describe joint position moves
         self._speed = speed
         self._accuracy = accuracy
 
+        self._domino_source = None
+        self._domino_source_approach = None
         # Recorded waypoints
         self._waypoints = list()
 
@@ -48,13 +50,19 @@ class Waypoints(object):
         print("Enabling robot... ")
         self._rs.enable()
 
+        # Calibrate Gripper
+        if not (self._gripper.calibrated() or self._gripper.calibrate()):
+            rospy.logwarn("%s (%s) calibration failed.",
+                          self._gripper.name.capitalize(),
+                          self._gripper.type())
+
         # Create Navigator I/O
         self._navigator_io = baxter_interface.Navigator(self._arm)
-	self._overhead_orientation = Quaternion(
-                             x=-0.0249590815779,
-                             y=0.999649402929,
-                             z=0.00737916180073,
-                             w=0.00486450832011)
+        self._overhead_orientation = Quaternion(
+            x=-0.0249590815779,
+            y=0.999649402929,
+            z=0.00737916180073,
+            w=0.00486450832011)
 
     def _record_waypoint(self, value):
         """
@@ -64,8 +72,10 @@ class Waypoints(object):
         """
         if value:
             print("Waypoint Recorded")
-	    
-	    self._waypoints.append(self._limb.endpoint_pose())
+        if self._domino_source is None:
+            self._domino_source = self._limb.endpoint_pose()
+        else:
+            self._waypoints.append(self._limb.endpoint_pose())
 
     def _stop_recording(self, value):
         """
@@ -84,7 +94,7 @@ class Waypoints(object):
         """
         rospy.loginfo("Waypoint Recording Started")
         print("Press Navigator 'OK/Wheel' button to record a new joint "
-        "joint position waypoint.")
+              "joint position waypoint.")
         print("Press Navigator 'Rethink' button when finished recording "
               "waypoints to begin playback")
         # Connect Navigator I/O signals
@@ -104,24 +114,28 @@ class Waypoints(object):
         self._navigator_io.button0_changed.disconnect(self._record_waypoint)
         self._navigator_io.button2_changed.disconnect(self._stop_recording)
     def _find_approach(self, current_pose, offset):
-	print("Finding approach with offset %d" % offset)
+        print("Finding approach with offset %d" % offset)
         ikreq = SolvePositionIKRequest()
-	pose = copy.deepcopy(current_pose)
-	try:
-        	pose['position'] = Point(x=pose['position'][0], y = pose['position'][1], z = pose['position'][2] + offset)
-	except Exception:
-		pose['position'] = Point(x=pose['position'].x, y=pose['position'].y, z=pose['position'].z+offset)
+        pose = copy.deepcopy(current_pose)
+        try:
+            pose['position'] = Point(
+                x=pose['position'][0],
+                y=pose['position'][1],
+                z=pose['position'][2] + offset)
+        except Exception:
+            pose['position'] = Point(
+                x=pose['position'].x,
+                y=pose['position'].y,
+                z=pose['position'].z+offset)
         approach_pose = Pose()
         approach_pose.position = pose['position']
-	approach_pose.orientation = self._overhead_orientation
-        #approach_pose.orientation = pose['orientation']
-	pose = approach_pose
-	print(pose)
+        approach_pose.orientation = self._overhead_orientation
+        pose = approach_pose
         hdr = Header(stamp=rospy.Time.now(), frame_id='base')
         pose_req = PoseStamped(header=hdr, pose=pose)
         ikreq.pose_stamp.append(pose_req)
-	rospy.wait_for_service(self._ik_srv, 5.0)
-        resp=self._iksvc(ikreq)
+        rospy.wait_for_service(self._ik_srv, 5.0)
+        resp = self._iksvc(ikreq)
         return dict(zip(resp.joints[0].name, resp.joints[0].position))
 
     def playback(self):
@@ -135,81 +149,80 @@ class Waypoints(object):
         print("  Press Ctrl-C to stop...")
 
         # Set joint position speed ratio for execution
-        self._limb.set_joint_position_speed(self._speed)
+        self._limb.set_joint_position_speed(0.8)
 
-        if len(self._waypoints) < 2:
+        if len(self._waypoints) < 1:
             print("Not enough waypoints. Exiting")
             return
         # Only Perform one loop
-	
+    
         waypointApproach = []
-	waypointJP = []
+        waypointJP = []
         for waypoint in self._waypoints:
             waypointApproach.append(self._find_approach(waypoint, self._hover_distance))
             waypointJP.append(self._find_approach(waypoint, 0))
-            
-        homeWaypoint = waypointJP[0]
-        homeWaypointApproach = waypointApproach[0]
-	print("%d Waypoints\n%d JPs\n%d Approaches"%(len(self._waypoints), len(waypointJP), len(waypointApproach)))
+
+        self._domino_source_approach = self._find_approach(self._domino_source, self._hover_distance)
+        print("%d Waypoints\n%d JPs\n%d Approaches"%(len(self._waypoints), len(waypointJP), len(waypointApproach)))
         self._gripper.open()
         rospy.sleep(1.0)
         self._limb.set_joint_position_speed(0.8)
-        self._limb.move_to_joint_positions(homeWaypointApproach)
+        self._limb.move_to_joint_positions(self._domino_source_approach)
         self._limb.set_joint_position_speed(0.3)
-        self._limb.move_to_joint_positions(homeWaypoint)
+        self._limb.move_to_joint_positions(self._domino_source)
         rospy.sleep(1.0)
         self._gripper.close()
         rospy.sleep(1.0)
         self._limb.set_joint_position_speed(0.8)
-        self._limb.move_to_joint_positions(homeWaypointApproach)
+        self._limb.move_to_joint_positions(self._domino_source_approach)
 
-	print("=== Waypoints ===")
-	print(waypointJP)
-	print("=== Approaches ===")
-	print(waypointApproach)
-	for j in range(self._num_loops):
-        	# Loop through rest of waypoints
-		for i in range(len(waypointJP[1:])-1):
-		    waypoint = waypointJP[i+1]
-		    waypointA = waypointApproach[i+1]
-        	    if rospy.is_shutdown():
-        	        break
-        	    # Move to domino placement
-		    print("Moving ti Approahc point")
-        	    self._limb.set_joint_position_speed(0.8)
-        	    self._limb.move_to_joint_positions(waypointA)
-		    print("Moving to real point")
-        	    self._limb.set_joint_position_speed(0.3)
-        	    self._limb.move_to_joint_positions(waypoint)
-	
-	            # Drop off domino
-	            rospy.sleep(1.0)
-	            self._gripper.open()
-		    print("About to move to approach point")
-	            rospy.sleep(1.0)
-	            self._limb.move_to_joint_positions(waypointA)
-	
-	
-        	    # Head to home
-		    print("Moving to home approach")
-        	    self._limb.set_joint_position_speed(0.8)
-        	    self._limb.move_to_joint_positions(homeWaypointApproach)
-		    print("Moving to home")
-	            self._limb.set_joint_position_speed(0.3)
-	            self._limb.move_to_joint_positions(homeWaypoint)
-	
-	            # Grab next domino
-	            rospy.sleep(1.0)
-	            self._gripper.close()
-		    print("Moving to home approach")
-	            rospy.sleep(1.0)
+        print("=== Waypoints ===")
+        print(waypointJP)
+        print("=== Approaches ===")
+        print(waypointApproach)
+        for j in range(self._num_loops):
+                # Loop through rest of waypoints
+            for i in range(len(waypointJP)):
+                waypoint = waypointJP[i]
+                waypointA = waypointApproach[i]
+                if rospy.is_shutdown():
+                    break
+                # Move to domino placement
+                print("Moving ti Approahc point")
+                self._limb.set_joint_position_speed(0.8)
+                self._limb.move_to_joint_positions(waypointA)
+                print("Moving to real point")
+                self._limb.set_joint_position_speed(0.3)
+                self._limb.move_to_joint_positions(waypoint)
+        
+                # Drop off domino
+                rospy.sleep(1.0)
+                self._gripper.open()
+                print("About to move to approach point")
+                rospy.sleep(1.0)
+                self._limb.move_to_joint_positions(waypointA)
+        
+        
+                # Head to home
+                print("Moving to home approach")
+                self._limb.set_joint_position_speed(0.8)
+                self._limb.move_to_joint_positions(self._domino_source_approach)
+                print("Moving to home")
+                self._limb.set_joint_position_speed(0.3)
+                self._limb.move_to_joint_positions(self._domino_source)
+        
+                # Grab next domino
+                rospy.sleep(1.0)
+                self._gripper.close()
+                print("Moving to home approach")
+                rospy.sleep(1.0)
 
-        	    # Step away
-        	    self._limb.move_to_joint_positions(homeWaypointApproach)
+                # Step away
+                self._limb.move_to_joint_positions(self._domino_source_approach)
 
 
 
-        self._limb.set_joint_position_speed(0.3)
+            self._limb.set_joint_position_speed(0.3)
 
     def clean_shutdown(self):
         print("\nExiting example...")
@@ -236,23 +249,14 @@ def main():
         help='limb to record/playback waypoints'
     )
     parser.add_argument(
-        '-s', '--speed', default=0.3, type=float,
-        help='joint position motion speed ratio [0.0-1.0] (default:= 0.3)'
+        '-d', '--distance',
+        default=0.15, type=float,
+        help='Distance above domino to hover'
     )
     parser.add_argument(
-        '-a', '--accuracy',
-        default=baxter_interface.settings.JOINT_ANGLE_TOLERANCE, type=float,
-        help='joint position accuracy (rad) at which waypoints must achieve'
-    )
-    parser.add_argument(
-	'-d', '--distance',
-	default=0.15, type=float,
-	help='Distance above domino to hover'
-    )
-    parser.add_argument(
-	'-n', '--loops',
-	default=1, type=int,
-	help="Number of times to loop the program"
+        '-n', '--loops',
+        default=1, type=int,
+        help="Number of times to loop the program"
     )
     args = parser.parse_args(rospy.myargv()[1:])
 
@@ -263,6 +267,8 @@ def main():
 
     # Register clean shutdown
     rospy.on_shutdown(waypoints.clean_shutdown)
+
+    
 
     # Begin example program
     waypoints.record()
