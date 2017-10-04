@@ -20,7 +20,7 @@ from geometry_msgs.msg import (
 
 
 class Waypoints(object):
-    def __init__(self, limb, speed, accuracy, distance, loops):
+    def __init__(self, limb, distance, loops):
         # Create baxter_interface limb instance
         self._arm = limb
         self._limb = baxter_interface.Limb(self._arm)
@@ -31,12 +31,10 @@ class Waypoints(object):
         self._hover_distance = distance
         self._num_loops = loops
 
-        # Parameters which will describe joint position moves
-        self._speed = speed
-        self._accuracy = accuracy
 
-        self._domino_source = None
         self._domino_source_approach = None
+        self._domino_source = None
+        self._domino_source_jp = None
         # Recorded waypoints
         self._waypoints = list()
 
@@ -72,8 +70,8 @@ class Waypoints(object):
         """
         if value:
             print("Waypoint Recorded")
-        if self._domino_source is None:
-            self._domino_source = self._limb.endpoint_pose()
+        if self._domino_source_jp is None:
+            self._domino_source_jp = self._limb.endpoint_pose()
         else:
             self._waypoints.append(self._limb.endpoint_pose())
 
@@ -162,17 +160,15 @@ class Waypoints(object):
             waypointApproach.append(self._find_approach(waypoint, self._hover_distance))
             waypointJP.append(self._find_approach(waypoint, 0))
 
-        self._domino_source_approach = self._find_approach(self._domino_source, self._hover_distance)
+        self._domino_source_approach = self._find_approach(self._domino_source_jp, self._hover_distance)
+	self._domino_source = self._find_approach(self._domino_source_jp, 0)
         print("%d Waypoints\n%d JPs\n%d Approaches"%(len(self._waypoints), len(waypointJP), len(waypointApproach)))
         self._gripper.open()
-        rospy.sleep(1.0)
         self._limb.set_joint_position_speed(0.8)
         self._limb.move_to_joint_positions(self._domino_source_approach)
         self._limb.set_joint_position_speed(0.3)
         self._limb.move_to_joint_positions(self._domino_source)
-        rospy.sleep(1.0)
         self._gripper.close()
-        rospy.sleep(1.0)
         self._limb.set_joint_position_speed(0.8)
         self._limb.move_to_joint_positions(self._domino_source_approach)
 
@@ -263,7 +259,7 @@ def main():
     print("Initializing node... ")
     rospy.init_node("rsdk_joint_position_waypoints_%s" % (args.limb,))
 
-    waypoints = Waypoints(args.limb, args.speed, args.accuracy, args.distance, args.loops)
+    waypoints = Waypoints(args.limb, args.distance, args.loops)
 
     # Register clean shutdown
     rospy.on_shutdown(waypoints.clean_shutdown)
