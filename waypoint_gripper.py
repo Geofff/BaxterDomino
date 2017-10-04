@@ -20,7 +20,7 @@ from geometry_msgs.msg import (
 
 
 class Waypoints(object):
-    def __init__(self, limb, distance, loops):
+    def __init__(self, limb, distance, loops, calibrate):
         # Create baxter_interface limb instance
         self._arm = limb
         self._limb = baxter_interface.Limb(self._arm)
@@ -49,6 +49,9 @@ class Waypoints(object):
         self._rs.enable()
 
         # Calibrate Gripper
+	if (calibrate):
+		self._gripper.calibrate()
+
         if not (self._gripper.calibrated() or self._gripper.calibrate()):
             rospy.logwarn("%s (%s) calibration failed.",
                           self._gripper.name.capitalize(),
@@ -70,10 +73,12 @@ class Waypoints(object):
         """
         if value:
             print("Waypoint Recorded")
-        if self._domino_source_jp is None:
-            self._domino_source_jp = self._limb.endpoint_pose()
-        else:
-            self._waypoints.append(self._limb.endpoint_pose())
+            if self._domino_source_jp is None:
+            	self._domino_source_jp = self._limb.endpoint_pose()
+	    	print("Domino source set")
+            else:
+	    	print("Added waypoint")
+            	self._waypoints.append(self._limb.endpoint_pose())
 
     def _stop_recording(self, value):
         """
@@ -128,6 +133,7 @@ class Waypoints(object):
         approach_pose = Pose()
         approach_pose.position = pose['position']
         approach_pose.orientation = self._overhead_orientation
+	approach_pose.orientation.x = pose['orientation'].x
         pose = approach_pose
         hdr = Header(stamp=rospy.Time.now(), frame_id='base')
         pose_req = PoseStamped(header=hdr, pose=pose)
@@ -240,6 +246,8 @@ def main():
     parser = argparse.ArgumentParser(formatter_class=arg_fmt,
                                      description=main.__doc__)
     required = parser.add_argument_group('required arguments')
+    parser.add_argument(
+	'-c', '--calibrate', action='store_true', default=False, help='Recalibrate grippers')
     required.add_argument(
         '-l', '--limb', required=True, choices=['left', 'right'],
         help='limb to record/playback waypoints'
@@ -259,7 +267,7 @@ def main():
     print("Initializing node... ")
     rospy.init_node("rsdk_joint_position_waypoints_%s" % (args.limb,))
 
-    waypoints = Waypoints(args.limb, args.distance, args.loops)
+    waypoints = Waypoints(args.limb, args.distance, args.loops, args.calibrate)
 
     # Register clean shutdown
     rospy.on_shutdown(waypoints.clean_shutdown)
