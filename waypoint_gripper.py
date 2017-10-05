@@ -90,6 +90,14 @@ class Waypoints(object):
         if value:
             self._is_recording = False
 
+    def generatePath(self):
+	waypointApproach = []
+	waypointJP = []
+	for i in range(self._numDominos):
+            waypointApproach.append(self._find_approach(self._waypoints[0], self._hover_distance,-0.05*i))
+            waypointJP.append(self._find_approach(self._waypoints[0], 0,-0.05*i))
+	return waypointApproach, waypointJP
+
     def record(self):
         """
         Records joint position waypoints upon each Navigator 'OK/Wheel' button
@@ -159,16 +167,13 @@ class Waypoints(object):
             print("Not enough waypoints. Exiting")
             return
         # Only Perform one loop
-    
-        waypointApproach = []
-        waypointJP = []
-	i = 0
-        for waypoint in self._waypoints:
-            waypointApproach.append(self._find_approach(self._waypoints[0], self._hover_distance,-0.05*i))
-            waypointJP.append(self._find_approach(self._waypoints[0], 0,-0.05*i))
-	    i = i + 1
+	self._numDominos = 3
+	waypointApproach, waypointJP = self.generatePath()
 	self._knock_approach = self._find_approach(self._waypoints[0], 0.05, 0.05)
+	print(self._knock_approach)
+	self._knock_approach['left_w2']+=3.14159/2
 	self._knock = self._find_approach(self._waypoints[0], 0.05, -0.05)
+	self._knock['left_w2']+=3.14159/2
         self._domino_source_approach = self._find_approach(self._domino_source_jp, self._hover_distance,0)
 	self._domino_source = self._find_approach(self._domino_source_jp, 0,0)
         print("%d Waypoints\n%d JPs\n%d Approaches"%(len(self._waypoints), len(waypointJP), len(waypointApproach)))
@@ -212,18 +217,21 @@ class Waypoints(object):
                 print("Moving to home approach")
                 self._limb.set_joint_position_speed(0.8)
                 self._limb.move_to_joint_positions(self._domino_source_approach)
-                print("Moving to home")
-                self._limb.set_joint_position_speed(0.3)
-                self._limb.move_to_joint_positions(self._domino_source)
+		if (i != len(waypointJP)-1):
+                	print("Moving to home")
+                	self._limb.set_joint_position_speed(0.3)
+                	self._limb.move_to_joint_positions(self._domino_source)
         
-                # Grab next domino
-                rospy.sleep(1.0)
-                self._gripper.close()
-                print("Moving to home approach")
-                rospy.sleep(1.0)
+       		        # Grab next domino
+                	rospy.sleep(1.0)
+                	self._gripper.close()
+                	print("Moving to home approach")
+                	rospy.sleep(1.0)
 
-                # Step away
-                self._limb.move_to_joint_positions(self._domino_source_approach)
+                	# Step away
+                	self._limb.move_to_joint_positions(self._domino_source_approach)
+		else:
+			self._gripper.close()
 
 
 
