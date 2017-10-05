@@ -116,18 +116,18 @@ class Waypoints(object):
         # We are now done with the navigator I/O signals, disconnecting them
         self._navigator_io.button0_changed.disconnect(self._record_waypoint)
         self._navigator_io.button2_changed.disconnect(self._stop_recording)
-    def _find_approach(self, current_pose, offset):
+    def _find_approach(self, current_pose, offset, offsetx):
         print("Finding approach with offset %d" % offset)
         ikreq = SolvePositionIKRequest()
         pose = copy.deepcopy(current_pose)
         try:
             pose['position'] = Point(
-                x=pose['position'][0],
+                x=pose['position'][0] + offsetx,
                 y=pose['position'][1],
                 z=pose['position'][2] + offset)
         except Exception:
             pose['position'] = Point(
-                x=pose['position'].x,
+                x=pose['position'].x + offsetx,
                 y=pose['position'].y,
                 z=pose['position'].z+offset)
         approach_pose = Pose()
@@ -162,12 +162,15 @@ class Waypoints(object):
     
         waypointApproach = []
         waypointJP = []
+	i = 0
         for waypoint in self._waypoints:
-            waypointApproach.append(self._find_approach(waypoint, self._hover_distance))
-            waypointJP.append(self._find_approach(waypoint, 0))
-
-        self._domino_source_approach = self._find_approach(self._domino_source_jp, self._hover_distance)
-	self._domino_source = self._find_approach(self._domino_source_jp, 0)
+            waypointApproach.append(self._find_approach(self._waypoints[0], self._hover_distance,-0.05*i))
+            waypointJP.append(self._find_approach(self._waypoints[0], 0,-0.05*i))
+	    i = i + 1
+	self._knock_approach = self._find_approach(self._waypoints[0], 0.05, 0.05)
+	self._knock = self._find_approach(self._waypoints[0], 0.05, -0.05)
+        self._domino_source_approach = self._find_approach(self._domino_source_jp, self._hover_distance,0)
+	self._domino_source = self._find_approach(self._domino_source_jp, 0,0)
         print("%d Waypoints\n%d JPs\n%d Approaches"%(len(self._waypoints), len(waypointJP), len(waypointApproach)))
         self._gripper.open()
         self._limb.set_joint_position_speed(0.8)
@@ -225,6 +228,11 @@ class Waypoints(object):
 
 
             self._limb.set_joint_position_speed(0.3)
+	    # Knock over all dominos
+	self._limb.move_to_joint_positions(self._knock_approach)
+	self._limb.move_to_joint_positions(self._knock)
+	self._limb.move_to_joint_positions(self._domino_source_approach)
+		
 
     def clean_shutdown(self):
         print("\nExiting example...")
