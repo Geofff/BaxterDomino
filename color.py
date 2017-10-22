@@ -4,6 +4,7 @@
 import sys
 import numpy as np
 import math
+import queue
 import argparse
 import cv2
 from matplotlib import pyplot as plt
@@ -13,55 +14,122 @@ class color_detector:
     def __init__(self):
         #BGR Format
         self.boundaries = [
-            ([200, 150, 0], [255, 200, 50]),
-            ([50, 100, 25], [150, 255, 100])
+            ([200, 150, 0], [255, 200, 50]),    #Blue
+            ([50, 100, 25], [150, 255, 100])    #Green
         ]
 
     def filterColors(self, image):
         """
-            So far fitlers colours out and draws centre of each face and
-            its direction
-            TODO: only choose best face for each domino
-        :param image:
-        :return:
+            Finds each face of all dominoes in image and gets the position and
+            orientation
+        :param image to analyse
+        :return list of tuples (faceImage, xPos, yPos, angle) ordered by distance
         """
         results = []
-        xPoint = 550
-        yPoint = 300
-
+        #xPoint = 550
+        #yPoint = 300
         #for i in range(-10,10):
          #  for j in range(-10,10):
                 #print(image.item((xPoint + i,yPoint + j,0)), end=' ')
                 #print(image.item((xPoint + i, yPoint + j, 1)), end=' ')
                 #print(image.item((xPoint + i, yPoint + j, 2)))
         #cv2.imshow("images", image)
-        for i in range(0,3):
-            print(i," ", image.item((xPoint, yPoint,i)))
+        #for i in range(0,3):
+        #    print(i," ", image.item((xPoint, yPoint,i)))
+        colors = self.__getColors(image)
+        #colorOnly = colors[0].copy()
+        #for i in range(1, len(colors)):
+        #    colorOnly += colors[i]
+        #cv2.imshow("images", np.hstack([image, colorOnly]))
+        #cv2.waitKey(0)
+        #sides = self.__getConnectedComponents(colorOnly)
+        faceQueue = queue.PriorityQueue(maxsize=len(colors))
+        for side in colors:
+            xPos, yPos = self.__getCentres(side)
+            phi = self.__getOrientation(side)
+            location = self.__drawLocation(side, (xPos, yPos), phi)
+            faceSize = self.__getFaceSize(side)
+            faceQueue.put((-faceSize, (location,xPos,yPos,phi)))
+        for face in range(faceQueue.qsize()):
+            results.append(faceQueue.get()[1])
+        return results
+
+    def getLongEdgeLength(self, faceTuple):
+        """
+            Gets the size of the longest edge of a given face
+        :param faceTuple (Image, xPos, yPos, angle)
+        :return edge distance and image of distance measured
+        """
+        grad = math.tan(faceTuple[3] * math.pi / 180)
+        output = faceTuple[0].copy()
+        size = faceTuple[0].shape
+        max = (0,0)
         i = 0
-        for (lower, upper) in self.boundaries:
-            #Create numpy arrays from boundaries
-            lower = np.array(lower, dtype = "uint8")
+        for x in range(faceTuple[1], size[0]):
+            y = faceTuple[2] + i * grad
+            if faceTuple[0][x, int(y), 0] > 0:
+                max = (x,y)
+                output[x,int(y),:] = [255,255,255]
+                output[2 * faceTuple[1] - x, int(2 * faceTuple[2] - y), :] = [255,255,255]
+            i += 1
+        dist = math.sqrt(pow(max[0]-faceTuple[1],2) + pow(max[0]-faceTuple[2],2))
+        return dist * 2, output
+
+    def __getFaceSize(self, face):
+        """
+            Gets the size of the domino face given a filtered image of it
+        :param face image
+        :return size of face in number of pixels:
+        """
+        face = self.__filterAbsolute(face)
+        factor = 1
+        colorIndex = 0
+        for i, (lower, upper) in enumerate(self.boundaries):
+            # Create numpy arrays from boundaries
+            lower = np.array(lower, dtype="uint8")
             upper = np.array(upper, dtype="uint8")
-            #Find colour within the boundaries and apply mask
+            # Find colour within the boundaries and apply mask
+            mask = cv2.inRange(face, lower, upper)
+            output = cv2.bitwise_and(face, face, mask=mask)
+            if np.sum(output) > 0:
+                colorIndex  = i
+        if colorIndex == 1:
+            factor = 2.4
+        return np.sum(face) * factor
+
+    def __drawLocation(self, image, center, angle):
+        """
+            Draw location of dominoe on image given position and orientation
+        :param image to draw on:
+        :param center position of domino (x,y):
+        :param angle of domino in degrees:
+        :return image with position drawn in white:
+        """
+        for i in range(-5, 6):
+            image[center[0] + i, center[1], :] = [255,255,255]
+            image[center[0], center[1] + i, :] = [255,255,255]
+        grad = math.tan(angle * math.pi / 180)
+        for i in range(15):
+            image[center[0] + i, int(center[1] + i * grad), :] = [255,255,255]
+        return image
+
+    def __getColors(self, image):
+        """
+            Filters image getting blue and green colors and making seperate images
+        :param image to analyse:
+        :return list of images seperated by color:
+        """
+        result = []
+        for (lower, upper) in self.boundaries:
+            # Create numpy arrays from boundaries
+            lower = np.array(lower, dtype="uint8")
+            upper = np.array(upper, dtype="uint8")
+            # Find colour within the boundaries and apply mask
             mask = cv2.inRange(image, lower, upper)
             output = cv2.bitwise_and(image, image, mask=mask)
-            color = cv2.medianBlur(output.copy(), 9)
-            position, (xPos, yPos) = self.__getCentres(color)
-            sides = self.__getConnectedComponents(color)
-            print("Sides: ", len(sides))
-            for side in sides:
-                phi = self.__getOrientation(side)
-                grad = int(math.tan(phi * math.pi / 180))
-                for i in range(0,15):
-                    for j in range(0, 3):
-                        position.itemset((xPos + i, yPos + i*grad, j), 255)
-                cv2.imshow("images", np.hstack([image,position]))
-                #cv2.imwrite("filter(" + str(i) + ").jpeg", np.hstack([image,side]))
-                cv2.waitKey(0)
-                #i += 1
-            #cv2.imshow("images", np.hstack([image, position]))
-            #cv2.imwrite("position(" + str(i) + ").jpeg", np.hstack([image,position]))
-            cv2.waitKey(0)
+            result.append(cv2.medianBlur(output, 9))
+        return result
+
 
     def __getOrientation(self, image):
         """
@@ -74,7 +142,7 @@ class color_detector:
         object1 = image.copy()
         x1 = []
         y1 = []
-        for i in range(0, size[0]):
+        for i in range(size[0]):
             row = object1[i, :, 0]
             if (np.sum(row) > 0):
                 x1.append(i)
@@ -85,7 +153,7 @@ class color_detector:
         object2 = image.copy()
         x2 = []
         y2 = []
-        for i in range(0,size[1]):
+        for i in range(size[1]):
             row = object2[:, i, 0]
             if(np.sum(row) > 0):
                 y2.append(i)
@@ -98,7 +166,7 @@ class color_detector:
         else:
             minLength = len(x2)
         #object3 = image.copy()
-        for i in range(0, minLength):
+        for i in range(minLength):
             x1[i] = int((x1[i] + x2[-i])/2)
             y1[i] = int((y1[i] + y2[-i])/2)
             #for j in range(0, 3):
@@ -119,9 +187,6 @@ class color_detector:
         xy = np.sum(x * y)
         xTot = np.sum(x)
         return (x.size * xy - xTot * np.sum(y)) / (x.size * np.sum(x * x) - xTot * xTot)
-
-
-
 
 
     def __getCentres(self, image):
@@ -148,11 +213,7 @@ class color_detector:
         verticalTot = int(verticalTot)
         horizTot /= horizNum
         horizTot = int(horizTot)
-        for i in range(-5, 6):
-            for j in range(0, 3):
-                image.itemset((verticalTot + i, horizTot, j), 255)
-                image.itemset((verticalTot, horizTot + i, j), 255)
-        return image, (verticalTot, horizTot)
+        return verticalTot, horizTot
 
     def __getConnectedComponents(self, image):
         """
@@ -167,8 +228,8 @@ class color_detector:
         linked = [np.zeros(1, dtype=np.int) for i in range(0, size[0])]
         nextLabel = 1
         labels = [[0] * size[1] for i in range(size[0])]
-        for i in range(0,size[0]):
-            for j in range(0, size[1]):
+        for i in range(size[0]):
+            for j in range(size[1]):
                 if(binary.item(i, j, 0) > 0):
                     neighbours = self.__getNeighbours(i, j, binary)
                     if len(neighbours) == 0:
@@ -186,16 +247,16 @@ class color_detector:
                             linked[x] = np.unique(np.concatenate((linked[x],l)))
         uniqLabels = []
         colorOut = [[0] * size[1] for i in range(size[0])]
-        for i in range(0, size[0]):
-            for j in range(0, size[1]):
+        for i in range(size[0]):
+            for j in range(size[1]):
                 if(binary.item(i, j, 0) > 0):
                     labels[i][j] = self.__findLabel(labels[i][j], linked)
                     colorOut[i][j] = color[labels[i][j] - 1]
                     if(labels[i][j] not in uniqLabels):
                         uniqLabels.append(labels[i][j])
         output = [np.zeros(shape=size, dtype="uint8") for i in range(0, len(uniqLabels))]
-        for i in range(0, size[0]):
-            for j in range(0, size[1]):
+        for i in range(size[0]):
+            for j in range(size[1]):
                 if(labels[i][j] > 0):
                     np.copyto(output[uniqLabels.index(labels[i][j])][i,j], colorOut[i][j])
 
@@ -256,15 +317,7 @@ class color_detector:
         :param image to filter
         :return image with 0 or 1 in first color element
         """
-        size = image.shape
-        result = image.copy()
-        for i in range(0, size[0]):
-            for j in range(0, size[1]):
-                if result.item((i, j, 0)) > 0:
-                    result.itemset((i, j, 0), 1)
-                else:
-                    result.itemset((i, j, 0), 0)
-        return result
+        return (image > 0).astype(int)
 
 def main():
     """
@@ -276,8 +329,14 @@ def main():
         return 0;
     cd = color_detector()
     img = cv2.imread(sys.argv[1], 1)
-    cd.filterColors(img)
-
+    faces = cd.filterColors(img)
+    for face in faces:
+        cv2.imshow("images", np.hstack([img, face[0]]))
+        cv2.waitKey(0)
+    edgeLength, lengthImage = cd.getLongEdgeLength(faces[0])
+    print("Length: ", edgeLength)
+    cv2.imshow("images", np.hstack([img, lengthImage]))
+    cv2.waitKey(0)
     return 0
 
 if __name__ == '__main__':
