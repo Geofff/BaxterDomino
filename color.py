@@ -5,6 +5,7 @@ import sys
 import numpy as np
 import math
 import queue
+import time
 import argparse
 import cv2
 from matplotlib import pyplot as plt
@@ -37,16 +38,16 @@ class color_detector:
         #for i in range(0,3):
         #    print(i," ", image.item((xPoint, yPoint,i)))
         colors = self.__getColors(image)
-        #colorOnly = colors[0].copy()
-        #for i in range(1, len(colors)):
-        #    colorOnly += colors[i]
-        #cv2.imshow("images", np.hstack([image, colorOnly]))
-        #cv2.waitKey(0)
-        #sides = self.__getConnectedComponents(colorOnly)
-        faceQueue = queue.PriorityQueue(maxsize=len(colors))
-        for side in colors:
+        sides = []
+        start = time.time()
+        for color in colors:
+            sides.extend(self.__getConnectedComponents(color))
+        print("Got Connected components: ", time.time() - start)
+        faceQueue = queue.PriorityQueue(maxsize=len(sides))
+        for side in sides:
             xPos, yPos = self.__getCentres(side)
             phi = self.__getOrientation(side)
+            #print("Location: ", xPos, ",", yPos, ",", phi)
             location = self.__drawLocation(side, (xPos, yPos), phi)
             faceSize = self.__getFaceSize(side)
             faceQueue.put((-faceSize, (location,xPos,yPos,phi)))
@@ -218,52 +219,44 @@ class color_detector:
     def __getConnectedComponents(self, image):
         """
             Finds all connected components and creates seperate image for each.
+            Uses two-pass method
             Source: https://en.wikipedia.org/wiki/Connected-component_labeling
         :param image in a single color to analyse
         :return list of images of components
         """
         size = image.shape
-        binary = self.__filterAbsolute(image)
-        color = []
-        linked = [np.zeros(1, dtype=np.int) for i in range(0, size[0])]
+        linked = [[0]]
         nextLabel = 1
         labels = [[0] * size[1] for i in range(size[0])]
         for i in range(size[0]):
-            for j in range(size[1]):
-                if(binary.item(i, j, 0) > 0):
-                    neighbours = self.__getNeighbours(i, j, binary)
-                    if len(neighbours) == 0:
-                        linked[nextLabel][0] = nextLabel
-                        labels[i][j] = nextLabel
-                        color.append(image[i,j,:])
-                        nextLabel += 1
-                    else :
-                        l = self.__getNeighbourLabels(labels, neighbours)
-                        l = l[np.nonzero(l)]
-                        labels[i][j] = min(l)
-                        #if(labels[i][j] < 0):
-                           # print("Min: ", l)
-                        for x in l:
-                            linked[x] = np.unique(np.concatenate((linked[x],l)))
+            if np.sum(image[i,:,0] > 0):
+                for j in range(size[1]):
+                    if(image.item(i, j, 0) > 0):
+                        neighbours, nLabels, = self.__getNeighbours(i, j, labels, image)
+                        if len(neighbours) == 0:
+                            linked.append([nextLabel])
+                            labels[i][j] = nextLabel
+                            nextLabel += 1
+                        else :
+                            labels[i][j] = min(nLabels)
+                            for x in nLabels:
+                                linked[x] = list(set().union(linked[x], nLabels))
         uniqLabels = []
-        colorOut = [[0] * size[1] for i in range(size[0])]
+        output = []
         for i in range(size[0]):
-            for j in range(size[1]):
-                if(binary.item(i, j, 0) > 0):
-                    labels[i][j] = self.__findLabel(labels[i][j], linked)
-                    colorOut[i][j] = color[labels[i][j] - 1]
-                    if(labels[i][j] not in uniqLabels):
-                        uniqLabels.append(labels[i][j])
-        output = [np.zeros(shape=size, dtype="uint8") for i in range(0, len(uniqLabels))]
-        for i in range(size[0]):
-            for j in range(size[1]):
-                if(labels[i][j] > 0):
-                    np.copyto(output[uniqLabels.index(labels[i][j])][i,j], colorOut[i][j])
-
+            if np.sum(image[i,:,0] > 0):
+                for j in range(size[1]):
+                    if(image.item(i, j, 0) > 0):
+                        labels[i][j] = self.__findLabel(labels[i][j], linked)
+                        if(labels[i][j] not in uniqLabels):
+                            uniqLabels.append(labels[i][j])
+                            imageOut = np.zeros(shape=size, dtype="uint8")
+                            output.append(imageOut)
+                        output[uniqLabels.index(labels[i][j])][i, j, :] = image[i, j, :]
         return output
 
 
-    def __getNeighbours(self, x, y, image):
+    def __getNeighbours(self, x, y, labels, image):
         """
             Get all neighbouring points with the same value of given point
             8-neighbour
@@ -272,29 +265,22 @@ class color_detector:
         :param image being analysed
         :return list of neighbouring coordinate tuples (x,y)
         """
-        current = image.item(x,y, 0)
         size = image.shape
         neighbours = []
-        if x > 0 and image.item(x-1, y, 0) == current: neighbours.append((x-1, y))
-        if y > 0 and x > 0 and image.item(x-1,y-1, 0) == current:
+        nLabels = []
+        if x > 0 and image.item(x-1, y, 0) > 0:
+            neighbours.append((x-1, y))
+            nLabels.append(labels[x-1][y])
+        if y > 0 and x > 0 and image.item(x-1,y-1, 0) > 0:
             neighbours.append((x-1, y-1))
-        if y > 0 and image.item(x, y-1, 0) == current: neighbours.append((x, y-1))
-        if x > 0 and y+1 < size[1] and image.item(x-1, y+1, 0) == current:
+            nLabels.append(labels[x-1][y-1])
+        if y > 0 and image.item(x, y-1, 0) > 0:
+            neighbours.append((x, y-1))
+            nLabels.append(labels[x][y-1])
+        if x > 0 and y+1 < size[1] and image.item(x-1, y+1, 0) > 0:
             neighbours.append((x-1, y+1))
-        return neighbours
-
-    def __getNeighbourLabels(self, labels, neighbours):
-        """
-            Gets label of neighbouring points
-        :param labels matrix containing point labels
-        :param neighbours list of coordinate tuples (x,y)
-        :return ndarray of neighbour's labels
-        """
-        nLabels = np.zeros(len(neighbours), dtype=np.int)
-        for i, (x, y) in enumerate(neighbours):
-            if(labels[x][y] not in nLabels):
-                nLabels.itemset(i, labels[x][y])
-        return nLabels
+            nLabels.append(labels[x-1][y-1])
+        return neighbours, nLabels
 
     def __findLabel(self, target, linked):
         """
@@ -332,11 +318,11 @@ def main():
     faces = cd.filterColors(img)
     for face in faces:
         cv2.imshow("images", np.hstack([img, face[0]]))
-        cv2.waitKey(0)
+    #    cv2.waitKey(0)
     edgeLength, lengthImage = cd.getLongEdgeLength(faces[0])
     print("Length: ", edgeLength)
     cv2.imshow("images", np.hstack([img, lengthImage]))
-    cv2.waitKey(0)
+   # cv2.waitKey(0)
     return 0
 
 if __name__ == '__main__':
