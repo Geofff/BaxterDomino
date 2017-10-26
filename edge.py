@@ -3,14 +3,26 @@ import cv2
 import sys
 import numpy as np
 from matplotlib import pyplot as plt
-import math
+
 
 
 class edge_detector:
     def __init__(self):
         self.edges = 0
 
-    def getEdges(self, img, low, high):
+    def getEdges(self, img):
+        """
+            Uses Sobel filter to find edges of image
+        :param img to analyse
+        :return edge intensity image
+        """
+        gray = cv2.cvtColor (img, cv2.COLOR_BGR2GRAY)
+        sobelx = cv2.Sobel(gray, cv2.CV_64F, 1, 0, ksize=5)
+        sobely = cv2.Sobel(gray, cv2.CV_64F, 0, 1, ksize=5)
+        combined = cv2.add(np.absolute(sobelx), np.absolute(sobely))
+        return combined
+
+    def getEdgesF(self, img, low, high):
         """
             Uses Sobel filter to find edges of image
         :param img message to analyse
@@ -18,10 +30,7 @@ class edge_detector:
         :param high value threshold
         :return binary image
         """
-        sobelx = cv2.Sobel(img, cv2.CV_64F, 1, 0, ksize=5)
-        sobely = cv2.Sobel(img, cv2.CV_64F, 0, 1, ksize=5)
-        combined = cv2.add(sobelx, sobely)
-
+        combined = self.getEdges(img)
         return self.filter(combined, low, high)
 
     def max2(self, matrix):
@@ -56,6 +65,15 @@ class edge_detector:
                     result[i][j] = 1
         return np.asarray(result)
 
+    def mergeEdges(self, image, edges):
+        size = edges.shape
+        image_out = image.copy()
+        for i in range(size[0]):
+            for j in range(size[1]):
+                if edges[i][j] > 0:
+                    image_out[i,j,:] = [0,0,0]
+        return cv2.medianBlur(image_out, 9)
+
 def main():
     """
         Static method for running edge detection on images
@@ -67,18 +85,15 @@ def main():
     ed = edge_detector()
     img = cv2.imread(sys.argv[1], 0)
     #laplacian = cv2.Laplacian(img,cv2.CV_64F)
-    sobelx = cv2.Sobel(img, cv2.CV_64F, 1, 0, ksize=5)
-    sobely = cv2.Sobel(img, cv2.CV_64F, 0, 1, ksize=5)
-    combined = cv2.add(sobelx, sobely)
-    print("Max: ", ed.max2(sobelx))
+
 
     plt.subplot(221), plt.imshow(img, cmap= 'gray')
     plt.title('Original Image'), plt.xticks([]), plt.yticks([])
-    plt.subplot(222), plt.imshow(combined, cmap='gray')
+    plt.subplot(222), plt.imshow(ed.getEdges(img), cmap='gray')
     plt.title('Combined Image'), plt.xticks([]), plt.yticks([])
-    plt.subplot(223), plt.imshow(ed.filter(combined, 1000, 5000), cmap='binary')
+    plt.subplot(223), plt.imshow(ed.getEdgesF(img, 1000, 5000), cmap='binary')
     plt.title('Binary 1-5'), plt.xticks([]), plt.yticks([])
-    plt.subplot(224), plt.imshow(ed.filter(combined, 450, 850), cmap='binary')
+    plt.subplot(224), plt.imshow(ed.getEdgesF(img, 2000, 7000), cmap='binary')
     plt.title('Binary 2'), plt.xticks([]), plt.yticks([])
 
     plt.show()

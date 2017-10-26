@@ -4,19 +4,24 @@
 import sys
 import numpy as np
 import math
-import queue
-import time
-import argparse
+import heapq
 import cv2
-from matplotlib import pyplot as plt
 
 class color_detector:
 
     def __init__(self):
         #BGR Format
         self.boundaries = [
-            ([200, 150, 0], [255, 200, 50]),    #Blue
-            ([50, 100, 25], [150, 255, 100])    #Green
+           # ([0, 0, 0], [10, 10, 10]),  # Black
+           # ([200, 150, 0], [255, 200, 50]),    #Blue
+           # ([50, 100, 25], [150, 255, 100])    #Green
+
+           #([50,50,30], [255, 100, 50]),       #Blue Lab
+           #([30, 30, 20], [50, 50, 40])        #Green Lab
+            #HSI Format
+            ([100, 150, 30], [120, 255, 200]), #Blue
+            ([85, 50, 17], [105, 150,23])     #Green
+
         ]
 
     def filterColors(self, image):
@@ -27,32 +32,41 @@ class color_detector:
         :return list of tuples (faceImage, xPos, yPos, angle) ordered by distance
         """
         results = []
-        #xPoint = 550
-        #yPoint = 300
-        #for i in range(-10,10):
-         #  for j in range(-10,10):
-                #print(image.item((xPoint + i,yPoint + j,0)), end=' ')
-                #print(image.item((xPoint + i, yPoint + j, 1)), end=' ')
-                #print(image.item((xPoint + i, yPoint + j, 2)))
+        size = image.shape
+        print "Size: ", size[0], " ", size[1]
+        xPoint = 175
+        yPoint = 345
+        #hsv_image = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
+        #for i in range(-5,5):
+            #for j in range(-5,5):
+                #print hsv_image.item((xPoint + i,yPoint + j,0)),
+                #print hsv_image.item((xPoint + i, yPoint + j, 1)),
+                #print hsv_image.item((xPoint + i, yPoint + j, 2))
+                #image[xPoint + i, yPoint + j, :] = [255, 255, 255]
         #cv2.imshow("images", image)
+        #cv2.waitKey(0)
         #for i in range(0,3):
-        #    print(i," ", image.item((xPoint, yPoint,i)))
+         #   print(i," ", image.item((xPoint, yPoint,i)))
         colors = self.__getColors(image)
         sides = []
-        start = time.time()
+        #cv2.imshow("images", image)
+        #cv2.waitKey(0)
+        print "Displaying Colours: (", len(colors), ")"
         for color in colors:
+            cv2.imshow("images", color)
+            cv2.waitKey(0)
             sides.extend(self.__getConnectedComponents(color))
-        print("Got Connected components: ", time.time() - start)
-        faceQueue = queue.PriorityQueue(maxsize=len(sides))
+        faceQueue = []
         for side in sides:
             xPos, yPos = self.__getCentres(side)
             phi = self.__getOrientation(side)
-            #print("Location: ", xPos, ",", yPos, ",", phi)
-            location = self.__drawLocation(side, (xPos, yPos), phi)
+            location = self.drawLocation(side, (xPos, yPos), phi)
             faceSize = self.__getFaceSize(side)
-            faceQueue.put((-faceSize, (location,xPos,yPos,phi)))
-        for face in range(faceQueue.qsize()):
-            results.append(faceQueue.get()[1])
+            print(faceSize)
+            heapq.heappush(faceQueue, (-faceSize, (location,xPos,yPos,phi)))
+        for i in range(len(faceQueue)):
+            results.append(heapq.heappop(faceQueue)[1])
+        print("Faces found: ", len(results))
         return results
 
     def getLongEdgeLength(self, faceTuple):
@@ -68,7 +82,7 @@ class color_detector:
         i = 0
         for x in range(faceTuple[1], size[0]):
             y = faceTuple[2] + i * grad
-            if faceTuple[0][x, int(y), 0] > 0:
+            if int(y) < size[1] and faceTuple[0][x, int(y), 0] > 0:
                 max = (x,y)
                 output[x,int(y),:] = [255,255,255]
                 output[2 * faceTuple[1] - x, int(2 * faceTuple[2] - y), :] = [255,255,255]
@@ -98,7 +112,7 @@ class color_detector:
             factor = 2.4
         return np.sum(face) * factor
 
-    def __drawLocation(self, image, center, angle):
+    def drawLocation(self, image, center, angle):
         """
             Draw location of dominoe on image given position and orientation
         :param image to draw on:
@@ -106,12 +120,20 @@ class color_detector:
         :param angle of domino in degrees:
         :return image with position drawn in white:
         """
+        size = image.shape
         for i in range(-5, 6):
             image[center[0] + i, center[1], :] = [255,255,255]
             image[center[0], center[1] + i, :] = [255,255,255]
         grad = math.tan(angle * math.pi / 180)
         for i in range(15):
-            image[center[0] + i, int(center[1] + i * grad), :] = [255,255,255]
+            y = center[1] + i * grad
+            if y >= size[1]:
+                if center[1] + i < size[1]:
+                    image[center[0], center[1] + i, :] = [255, 255, 255]
+            else:
+                if center[0] + i >= size[0]:
+                    image[size[0] - 1, int(y), :] = [255,255,255]
+                image[center[0] + i, int(y), :] = [255,255,255]
         return image
 
     def __getColors(self, image):
@@ -120,13 +142,14 @@ class color_detector:
         :param image to analyse:
         :return list of images seperated by color:
         """
+        hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
         result = []
         for (lower, upper) in self.boundaries:
             # Create numpy arrays from boundaries
             lower = np.array(lower, dtype="uint8")
             upper = np.array(upper, dtype="uint8")
             # Find colour within the boundaries and apply mask
-            mask = cv2.inRange(image, lower, upper)
+            mask = cv2.inRange(hsv, lower, upper)
             output = cv2.bitwise_and(image, image, mask=mask)
             result.append(cv2.medianBlur(output, 9))
         return result
@@ -149,8 +172,7 @@ class color_detector:
                 x1.append(i)
                 yCoord = int(np.average(np.where(row > 0)))
                 y1.append(yCoord)
-                #for j in range(0, 3):
-               #     object1.itemset((i, yCoord, j), 255)
+                object1[i, yCoord, :] = [255,255,255]
         object2 = image.copy()
         x2 = []
         y2 = []
@@ -160,21 +182,44 @@ class color_detector:
                 y2.append(i)
                 xCoord = int(np.average(np.where(row>0)))
                 x2.append(xCoord)
-              #  for j in range(0, 3):
-              #      object2.itemset((xCoord, i, j), 255)
+                object2[xCoord, i, :] = [255,255,255]
+        #cv2.imshow("images", np.hstack([object1, object2]))
+        #cv2.waitKey(0)
         if len(x1) < len(x2):
             minLength = len(x1)
         else:
             minLength = len(x2)
-        #object3 = image.copy()
-        for i in range(minLength):
-            x1[i] = int((x1[i] + x2[-i])/2)
-            y1[i] = int((y1[i] + y2[-i])/2)
-            #for j in range(0, 3):
-             #   object3.itemset((x1[i], y1[i], j), 255)
-        grad = self.__getGradient(x1, y1)
+        object3 = image.copy()
+        grad1 = self.__getGradient(x1, y1)
+        grad2 = self.__getGradient(x2, y2)
+        if self.__isPerpendicular(grad1, grad2):
+            if self.__getRange(x1, y1) > self.__getRange(x2, y2):
+                grad = grad1
+            else:
+                grad = grad2
+        else:
+            grad = (grad1 + grad2) /2
+
+        #for i in range(minLength):
+        #    x1[i] = int((x1[i] + x2[i])/2)
+        ##    y1[i] = int((y1[i] + y2[i])/2)
+         #   object3[x1[i], y1[i], :] = [255,255,255]
+
+        #grad = self.__getGradient(x1, y1)
+        #cv2.imshow('images', np.hstack([object1+object2, object3]))
+        #cv2.waitKey(0)
+        if grad == float("inf"):
+            return 90
         return math.atan(grad) * 180 / math.pi
 
+    def __isPerpendicular(self, grad1, grad2):
+        angle1 = math.atan(grad1) * 180 / math.pi
+        angle2 = math.atan(grad2) * 180 / math.pi
+        diff = int(angle1 - angle2) % 90
+        return abs(diff) < 2
+
+    def __getRange(self, x, y):
+        return math.sqrt(pow(x[-1] - x[0], 2) + pow(y[-1] - y[0], 2))
 
     def __getGradient(self, x, y):
         """
@@ -187,7 +232,10 @@ class color_detector:
         y = np.array(y, dtype=int)
         xy = np.sum(x * y)
         xTot = np.sum(x)
-        return (x.size * xy - xTot * np.sum(y)) / (x.size * np.sum(x * x) - xTot * xTot)
+        bot = x.size * np.sum(x * x) - xTot * xTot
+        if bot == 0:
+            return float("inf")
+        return (x.size * xy - xTot * np.sum(y))/bot
 
 
     def __getCentres(self, image):
@@ -225,28 +273,29 @@ class color_detector:
         :return list of images of components
         """
         size = image.shape
+        binary = self.__filterAbsolute(image)
         linked = [[0]]
         nextLabel = 1
         labels = [[0] * size[1] for i in range(size[0])]
         for i in range(size[0]):
-            if np.sum(image[i,:,0] > 0):
+            if np.sum(binary[i,:,0] > 0):
                 for j in range(size[1]):
-                    if(image.item(i, j, 0) > 0):
-                        neighbours, nLabels, = self.__getNeighbours(i, j, labels, image)
+                    if(binary.item(i, j, 0) > 0):
+                        neighbours, nLabels, = self.__getNeighbours(i, j, labels, binary)
                         if len(neighbours) == 0:
                             linked.append([nextLabel])
                             labels[i][j] = nextLabel
                             nextLabel += 1
-                        else :
+                        elif len(nLabels) > 0:
                             labels[i][j] = min(nLabels)
                             for x in nLabels:
                                 linked[x] = list(set().union(linked[x], nLabels))
         uniqLabels = []
         output = []
         for i in range(size[0]):
-            if np.sum(image[i,:,0] > 0):
+            if np.sum(binary[i,:,0] > 0):
                 for j in range(size[1]):
-                    if(image.item(i, j, 0) > 0):
+                    if(binary.item(i, j, 0) > 0):
                         labels[i][j] = self.__findLabel(labels[i][j], linked)
                         if(labels[i][j] not in uniqLabels):
                             uniqLabels.append(labels[i][j])
@@ -280,6 +329,7 @@ class color_detector:
         if x > 0 and y+1 < size[1] and image.item(x-1, y+1, 0) > 0:
             neighbours.append((x-1, y+1))
             nLabels.append(labels[x-1][y-1])
+        nLabels = filter(lambda a: a != 0, nLabels)
         return neighbours, nLabels
 
     def __findLabel(self, target, linked):
