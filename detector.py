@@ -35,8 +35,14 @@ class image_converter:
 
     def display_image(self, msg):
         print('Publishing to display')
-        self.image_pub.publish(msg)
-        rospy.sleep(3)
+        try:
+            cv2.imshow("images", msg)
+            # cv2.waitKey(1)
+            msg = self.bridge.cv2_to_imgmsg(cv2.resize(msg, (1024, 600), interpolation=cv2.INTER_CUBIC), "bgr8")
+            self.image_pub.publish(msg)
+            rospy.sleep(1)
+        except CvBridgeError as e:
+            print(e)
 
     def callback(self, data):
         try:
@@ -52,25 +58,28 @@ class image_converter:
         if nextDomino:
             #cv2.imshow("images", np.hstack([cv_image, nextDomino[2]]))
             #cv2.waitKey(0)
-            msg = nextDomino[2]
-            self.position = (nextDomino[0], nextDomino[1])
-            print("Position: ",self.position)
-            try:
-                cv2.imshow("images", msg)
-                cv2.waitKey(1)
-                msg = self.bridge.cv2_to_imgmsg(cv2.resize(msg, (1024, 600), interpolation=cv2.INTER_CUBIC), "bgr8")
-                self.display_image(msg)
-            except CvBridgeError as e:
-                print(e)
+            msg = nextDomino[3]
+            if not self.position:
+                self.position = (nextDomino[0], nextDomino[1], nextDomino[2])
+            #print("Position: ",self.position)
         else:
             print("No faces found")
+            msg = cv_image
+        self.display_image(msg)
+
 
     def sensorCallback(self, msg, side):
         self.distance[side] = msg.range
         print("Sensor distance", side, msg.range)
 
     def getNextDomino(self):
-        return self.position
+        """
+            Returns positon of next domino relative to origin
+        :return tuple (positon in mm, angle in degree +CCW)
+        """
+        position = self.postion
+        self.position = ()
+        return position
 
 def main(args):
     #setup_cameras()
