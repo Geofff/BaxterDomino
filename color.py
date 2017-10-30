@@ -131,7 +131,7 @@ class color_detector:
             self.drawLocation(outImage, (origin[0], origin[1]) , origin[2] + relAngle)
             pixelDist, distImage = self.getLongEdgeLength(origin, originImage)
             relDist *= 83/(pixelDist/2)
-            return (relDist, relAngle, outImage)
+            return (relDist, relAngle, nextDomino[2], outImage)
         return nextDomino
 
     def getLongEdgeLength(self, faceTuple, image):
