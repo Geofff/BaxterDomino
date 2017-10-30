@@ -1,7 +1,8 @@
-
+from detector import image_converter
 import argparse
 import copy
 import sys
+import math
 
 import rospy
 
@@ -35,6 +36,7 @@ class Waypoints(object):
         self._domino_source_approach = None
         self._domino_source = None
         self._domino_source_jp = None
+        self._calibration_point = None
         # Recorded waypoints
         self._waypoints = list()
 
@@ -76,6 +78,9 @@ class Waypoints(object):
             if self._domino_source_jp is None:
             	self._domino_source_jp = self._limb.endpoint_pose()
 	    	print("Domino source set")
+            elif self._calibration_point is None:
+                self._calibration_point = self._limb.endpoint_pose()
+                print("Calibrated to point")  
             else:
 	    	print("Added waypoint")
             	self._waypoints.append(self._limb.endpoint_pose())
@@ -124,24 +129,30 @@ class Waypoints(object):
         # We are now done with the navigator I/O signals, disconnecting them
         self._navigator_io.button0_changed.disconnect(self._record_waypoint)
         self._navigator_io.button2_changed.disconnect(self._stop_recording)
-    def _find_approach(self, current_pose, offset, offsetx):
+    def _find_approach(self, current_pose, offset, offsetx, offsety=0, ang=0):
+        print("Finding approach for")
+        print(current_pose)
         print("Finding approach with offset %d" % offset)
         ikreq = SolvePositionIKRequest()
         pose = copy.deepcopy(current_pose)
         try:
             pose['position'] = Point(
                 x=pose['position'][0] + offsetx,
-                y=pose['position'][1],
+                y=pose['position'][1] + offety,
                 z=pose['position'][2] + offset)
         except Exception:
             pose['position'] = Point(
                 x=pose['position'].x + offsetx,
-                y=pose['position'].y,
+                y=pose['position'].y + offsety,
                 z=pose['position'].z+offset)
         approach_pose = Pose()
         approach_pose.position = pose['position']
         approach_pose.orientation = self._overhead_orientation
-	approach_pose.orientation.x = pose['orientation'].x
+        if ang == 0:
+	        approach_pose.orientation.x = pose['orientation'].x
+        else:
+	        approach_pose.orientation.x = ang
+                
         pose = approach_pose
         hdr = Header(stamp=rospy.Time.now(), frame_id='base')
         pose_req = PoseStamped(header=hdr, pose=pose)
@@ -281,17 +292,40 @@ def main():
     args = parser.parse_args(rospy.myargv()[1:])
 
     print("Initializing node... ")
-    rospy.init_node("rsdk_joint_position_waypoints_%s" % (args.limb,))
 
+    rospy.init_node('image_converter', anonymous=True)
     waypoints = Waypoints(args.limb, args.distance, args.loops, args.calibrate)
 
-    # Register clean shutdown
-    rospy.on_shutdown(waypoints.clean_shutdown)
 
     
 
     # Begin example program
     waypoints.record()
+    # Temp code to pickup placed dominos
+     
+
+    ic = image_converter()
+    print("Initialising...")
+    print(waypoints._calibration_point)
+    try:
+        while 1:
+                domino = ic.getNextDomino()
+                if len(domino) != 3:
+                        continue
+                camRot = -waypoints._calibration_point['orientation'].x
+                dx = math.cos(camRot+3.1415+math.radians(domino[1]))*domino[0]/1000
+                dy = math.sin(camRot+3.1415+math.radians(domino[1]))*domino[0]/1000
+                domAng = math.radians(domino[2])+camRot+3.1415
+                approach = waypoints._find_approach(waypoints._calibration_point, args.distance, dx, dy, domAng)
+                pos = waypoints._find_approach(waypoints._calibration_point, 0, dx, dy, domAng)
+                print(approach)        
+                waypoints._limb.move_to_joint_positions(approach)
+                waypoints._limb.move_to_joint_positions(pos)
+                print(domino)
+    except KeyboardInterrupt:
+        print("Shutting down")
+    cv2.destroyAllWindows()
+
     waypoints.playback()
 
 if __name__ == '__main__':
