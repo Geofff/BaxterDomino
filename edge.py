@@ -66,12 +66,18 @@ class edge_detector:
         return np.asarray(result)
 
     def mergeEdges(self, image, edges):
+        """
+            Merges binary edge image with color image
+        :param image
+        :param edges:
+        :return colour image with edges blacked out
+        """
         size = edges.shape
         image_out = image.copy()
         for i in range(size[0]):
             for j in range(size[1]):
                 if edges[i][j] > 0:
-                    image_out[i,j,:] = [0,0,0]
+                    image_out[i,j,:] = [255,255,255]
         return cv2.medianBlur(image_out, 9)
 
 def main():

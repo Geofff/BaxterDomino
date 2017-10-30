@@ -6,6 +6,9 @@ import numpy as np
 import math
 import heapq
 import cv2
+import edge
+
+
 
 class color_detector:
 
@@ -19,10 +22,14 @@ class color_detector:
            #([50,50,30], [255, 100, 50]),       #Blue Lab
            #([30, 30, 20], [50, 50, 40])        #Green Lab
             #HSI Format
-            ([100, 150, 30], [120, 255, 200]), #Blue
-            ([85, 50, 17], [105, 150,23])     #Green
+            ([95, 110, 20], [120, 255, 200]), #Blue
+            ([85, 50, 17], [105, 150,30])    #Green
+            #HSI Dark
+            #([10, 110, 30], [40, 140, 70])  #Blue
+
 
         ]
+        self.ed = edge.edge_detector()
 
     def filterColors(self, image):
         """
@@ -46,11 +53,15 @@ class color_detector:
         #cv2.waitKey(0)
         colors = self.__getColors(image)
         sides = []
-        print "Displaying Colours: (", len(colors), ")"
+        #print "Displaying Colours: (", len(colors), ")"
         for color in colors:
-            cv2.imshow("images", color)
-            cv2.waitKey(0)
+            #cv2.imshow("images", np.hstack([image,color]))
+            #cv2.waitKey(0)
             sides.extend(self.__getConnectedComponents(color))
+        #print "Showing Faces.."
+        #for side in sides:
+        #    cv2.imshow("images", np.hstack([image, side]))
+        #    cv2.waitKey(0)
         return sides
 
     def getAllDominoes(self, image):
@@ -60,6 +71,8 @@ class color_detector:
         :param image from camera
         :return list of tuples (xPos, yPos, orientation, locationImage)
         """
+        #edges = self.ed.getEdgesF(image, 1000, 5000)
+        #edgeImage = self.ed.mergeEdges(image, edges)
         faces = self.filterColors(image)
         faceQueue = []
         results = []
@@ -71,7 +84,7 @@ class color_detector:
             heapq.heappush(faceQueue, (-faceSize, (xPos, yPos, phi, location)))
         for i in range(len(faceQueue)):
             results.append(heapq.heappop(faceQueue)[1])
-        print("Faces found: ", len(results))
+        #print("Faces found: ", len(results))
         return results
 
 
@@ -82,18 +95,25 @@ class color_detector:
         :param image from camera
         :return tuple (xPos, yPos, orientation, locationImage)
         """
+        #edges = self.ed.getEdgesF(image, 200, 3000)
+        #edgeImage = self.ed.mergeEdges(image, edges)
         faces = self.filterColors(image)
         max = 0
-        maxDomino = ()
+        maxDomino = -1
         for i, face in enumerate(faces):
             faceSize = self.__getFaceSize(face)
             if faceSize > max:
                 max = faceSize
                 maxDomino = i
-        xPos, yPos = self.__getCentres(faces[maxDomino])
-        phi = self.__getOrientation(faces[maxDomino])
-        locationImage = self.drawLocation(faces[maxDomino], (xPos, yPos), phi)
-        return (xPos, yPos, phi, locationImage)
+        if maxDomino > -1:
+            xPos, yPos = self.__getCentres(faces[maxDomino])
+            phi = self.__getOrientation(faces[maxDomino])
+            locationImage = self.drawLocation(faces[maxDomino], (xPos, yPos), phi)
+            #print "Next Domino"
+            #cv2.imshow("images", np.hstack([image,locationImage]))
+            #cv2.waitKey(0)
+            return (xPos, yPos, phi, locationImage)
+        return ()
 
     def toNextDomino(self, image):
         """
@@ -104,32 +124,37 @@ class color_detector:
         """
         nextDomino = self.getNextDomino(image)
         if nextDomino:
-            relDist, relAngle, origin = self.getPosRelative(image, nextDomino)
-            outImage = self.drawPoint(image.copy(), (origin[0], origin[1]))
-            self.drawLocation(outImage, (nextDomino[0], nextDomino[1]), origin[2] + relAngle)
+            relDist, relAngle, origin, originImage = self.getPosRelative(image, nextDomino)
+            outImage = self.drawPoint(image.copy(), (nextDomino[0], nextDomino[1]), size=10)
+            self.drawLocation(outImage, (origin[0], origin[1]), origin[2])
+            #print 'Rel angle ', relAngle, origin[2]
+            self.drawLocation(outImage, (origin[0], origin[1]) , origin[2] + relAngle)
+            pixelDist, distImage = self.getLongEdgeLength(origin, originImage)
+            relDist *= 83/(pixelDist/2)
             return (relDist, relAngle, outImage)
         return nextDomino
 
-    def getLongEdgeLength(self, faceTuple):
+    def getLongEdgeLength(self, faceTuple, image):
         """
             Gets the size of the longest edge of a given face
-        :param faceTuple (Image, xPos, yPos, angle)
+        :param faceTuple (xPos, yPos, angle, Image)
         :return edge distance and image of distance measured
         """
-        grad = math.tan(faceTuple[3] * math.pi / 180)
-        output = faceTuple[0].copy()
-        size = faceTuple[0].shape
+        grad = math.tan(faceTuple[2] * math.pi / 180)
+        #print(image)
+        output = image.copy()
+        size = image.shape
         max = (0,0)
         i = 0
-        for x in range(faceTuple[1], size[0]):
-            y = faceTuple[2] + i * grad
-            if int(y) < size[1] and faceTuple[0][x, int(y), 0] > 0:
+        for x in range(faceTuple[0], size[0]):
+            y = faceTuple[1] + i * grad
+            if abs(int(y)) < size[1] and image[x, int(y), 0] > 0:
                 max = (x,y)
-                output[x,int(y),:] = [255,255,255]
-                output[2 * faceTuple[1] - x, int(2 * faceTuple[2] - y), :] = [255,255,255]
+                output[x,int(y),:] = [128,128,128]
+                #output[2 * faceTuple[0] - x, int(2 * faceTuple[1] - y), :] = [255,255,255]
             i += 1
-        dist = math.sqrt(pow(max[0]-faceTuple[1],2) + pow(max[0]-faceTuple[2],2))
-        return dist * 2, output
+        dist = math.sqrt(pow(max[0]-faceTuple[0],2) + pow(max[0]-faceTuple[1],2))
+        return dist * 2 , output
 
     def getOrigin(self, image):
         """
@@ -138,24 +163,37 @@ class color_detector:
         :param image from camera
         :return tuple (xPos, yPos, orientation)
         """
-        lowerBound = np.array([215, 210, 215], dtype="uint8")
-        upperBound = np.array([255, 255, 255], dtype="uint8")
-        invImage = cv2.bitwise_not(image.copy())
-        mask = cv2.inRange(invImage, lowerBound, upperBound)
-        output = cv2.bitwise_and(invImage, invImage, mask=mask)
-        ouput = cv2.medianBlur(output, 9)
-        output = self.__removeManipulator(output)
-        print "Manipulator removed"
-        cv2.imshow("images", np.hstack([image, output]))
-        cv2.waitKey(0)
+        output = self.__getBlack(image)
+        #print "Skeleton..."
+        #cv2.imshow("images", np.hstack([image, output]))
+        #cv2.waitKey(0)
+        output = self.__getOriginOnly(output)
+        #cv2.imshow("images", np.hstack([image, output]))
+        #cv2.waitKey(0)
         skel = self.__blur(self.__getSkeleton(output), 3)
+        #cv2.imshow("images", np.hstack([image, skel]))
+        #cv2.waitKey(0)
         xtremes = self.__getExtremePoints(skel)
-        xtremeImage = image.copy()
-        for p in xtremes:
-            xtremeImage = self.drawPoint(xtremeImage, p)
         xPos, yPos = self.__getIntersection(xtremes)
-        orientation = self.__getOrientationPoints(xPos, yPos, xtremes)
-        return (xPos, yPos, orientation)
+        if xPos > -1:
+            orientation = self.__getOrientationPoints(xPos, yPos, xtremes, image.copy())
+            originImage = self.drawLocation(image.copy(), (xPos, yPos), orientation)
+            #print "Origin..", orientation
+            #cv2.imshow("images", np.hstack([image, originImage]))
+            #cv2.waitKey(0)
+            return (xPos, yPos, orientation), output
+        return ()
+
+    def __getBlack(self, image):
+        invImage = cv2.bitwise_not(image.copy())
+        hsv = cv2.cvtColor(invImage, cv2.COLOR_BGR2HSV)
+        lowerBound = np.array([0, 0, 235], dtype="uint8")
+        upperBound = np.array([180, 20, 255], dtype="uint8")
+        mask = cv2.inRange(hsv, lowerBound, upperBound)
+        output = cv2.bitwise_and(invImage, invImage, mask=mask)
+        output = cv2.medianBlur(output, 9)
+        return output
+
 
     def drawLocation(self, image, center, angle):
         """
@@ -166,23 +204,28 @@ class color_detector:
         :return image with position drawn in white:
         """
         size = image.shape
-        image = self.drawPoint(image, (center[1], center[0]))
-        x = center[0] + 15 * math.sin(angle * math.pi / 180 + 90)
-        y = center[1] + 15 * math.cos(angle * math.pi / 180 + 90)
-        cv2.line(image, (center[0], center[1]), (int(x), int(y)), (255,255,255))
+        image = self.drawPoint(image, (center[0], center[1]))
+        #print angle
+        x = center[0] + 30 * math.cos(angle * math.pi / 180)
+        y = center[1] + 30 * math.sin(angle * math.pi / 180)
+        #x = center[0] + 30 * math.sin((angle + 180) * math.pi / 180)
+        #y = center[1] + 30 * math.cos((angle + 180) * math.pi / 180)
+        cv2.line(image, (center[1], center[0]), (int(y), int(x)), (255,255,255))
         return image
 
-    def drawPoint(self, image, point):
+    def drawPoint(self, image, point, size=20):
         """
             Draws given point on image using a white cross
         :param image to draw on
         :param point to draw
         :return same image with point drawn on
         """
+        imSize = image.shape
         point = (int(point[0]), int(point[1]))
-        for i in range(-5, 6):
-            image[point[0] + i, point[1], :] = [255,255,255]
-            image[point[0], point[1] + i, :] = [255,255,255]
+        for i in range(-int(size/2), int(size/2)+1):
+            if point[0] + i < imSize[0] and point[1] + i < imSize[1]:
+                image[point[0] + i, point[1], :] = [255,255,255]
+                image[point[0], point[1] + i, :] = [255,255,255]
         return image
 
     def getPosRelative(self, image, position):
@@ -195,14 +238,17 @@ class color_detector:
         :return angle - relative from origin angle
         :return originPos - tuple (xPos, yPos, orientation)
         """
-        originPos = self.getOrigin(image)
-        dx = originPos[0] - position[0]
-        dy = originPos[1] - position[1]
-        dist = math.sqrt(pow(dx,2) + pow(dy,2))
-        angle = math.atan2(dy, dx) * 180 / math.pi
-        return dist, angle - originPos[2], originPos
 
-    def __getOrientationPoints(self, xPos, yPos, points):
+        originPos, originImage = self.getOrigin(image)
+        if originPos:
+            dx = position[0] - originPos[0]
+            dy = position[1] - originPos[1]
+            dist = math.sqrt(pow(dx,2) + pow(dy,2))
+            angle = math.atan2(dy, dx) * 180 / math.pi
+            return dist, angle - originPos[2], originPos, originImage
+        return -1, -1, -1, -1
+
+    def __getOrientationPoints(self, xPos, yPos, points, image):
         """
             Gets orientation of origin given extreme points
         :param xPos of centre of mass
@@ -217,6 +263,9 @@ class color_detector:
             if dist > max:
                 max = dist
                 maxPoint = i
+        #print "Xtreme", points[maxPoint]
+        #cv2.imshow("images", self.drawPoint(image, points[maxPoint]))
+        #cv2.waitKey(0)
         return math.atan2(points[maxPoint][1] - yPos,points[maxPoint][0] - xPos) * 180 / math.pi
 
     def __getIntersection(self, points):
@@ -226,18 +275,22 @@ class color_detector:
         :param points list of 4 points (x,y) of line endpoints
         :return: x, y coordinates of intersection point
         """
-        points = self.__reversePoints(points)
-        #cv2.line(image, points[0], points[1], (255,255,255))
-        # cv2.line(image, points[2], points[3], (255, 255, 255))
-        x1 = points[0][0]
-        y1 = points[0][1]
-        m1 = float(points[1][1] - points[0][1])/float(points[1][0] - points[0][0])
-        x2 = points[2][0]
-        y2 = points[2][1]
-        m2 = float(points[3][1] - points[2][1])/float(points[3][0] - points[2][0])
-        xPos = (y2 - y1 + m1 * x1 - m2 * x2)/(m1-m2)
-        yPos = m1 * (xPos -x1) + y1
-        return int(xPos), int(yPos)
+        if points:
+            points = self.__reversePoints(points)
+            #cv2.line(image, points[0], points[1], (255,255,255))
+            # cv2.line(image, points[2], points[3], (255, 255, 255))
+
+            x1 = points[0][0]
+            y1 = points[0][1]
+            m1 = float(points[1][1] - points[0][1])/float(points[1][0] - points[0][0])
+            x2 = points[2][0]
+            y2 = points[2][1]
+            m2 = float(points[3][1] - points[2][1])/float(points[3][0] - points[2][0])
+            #fprint m1, m2
+            xPos = (y2 - y1 + m1 * x1 - m2 * x2)/(m1-m2)
+            yPos = m1 * (xPos -x1) + y1
+            return int(yPos), int(xPos)
+        return -1, -1
 
     def __reversePoints(self, points):
         """
@@ -293,7 +346,8 @@ class color_detector:
                     neighbours  = 0
                     for m in range(i-1,i+2):
                         for n in range(j-1, j+2):
-                            if (not (m == i and n == j)) and image[m,n,0] > 0:
+                            if m < size[0] and n < size[1] and \
+                                    (not (m == i and n == j)) and image[m,n,0] > 0:
                                 neighbours += 1
                     if neighbours < num:
                         output[i,j,:] = [0,0,0]
@@ -334,27 +388,41 @@ class color_detector:
         return output
 
 
-    def __removeManipulator(self, image):
+    def __getOriginOnly(self, image):
         """
-            Removes manipulator from image. NOT TESTED
+            Removes all components that are not the origin in the image
         :param image to edit
         :return image with manipulators whited out
         """
         size = image.shape
-        edge = []
-        empty = True
-        for i in range(size[0]):
-            if image[i,0,0] > 0 and empty:
-                edge.append(i)
-                empty = False
-            elif image[i,0,0] < 1 and not empty:
-                edge.append(i)
-                empty = True
-        man1 = int((edge[0] + edge[1])/2)
-        man2 = int((edge[2] + edge[3])/2)
-        image = cv2.rectangle(image, (man1-50,100), (man1+50,200), (0,0,0))
-        image = cv2.rectangle(image, (man2-50,100), (man2+50,200), (0,0,0))
-        return image
+        output = image.copy()
+        compSizes = []
+        cMax = 0
+        components = self.__getConnectedComponents(image)
+        for cImage in components:
+            isManipulator = False
+            for i in range(size[1]):
+                if cImage[0,i,0] > 0:
+                    output -= cImage
+                    isManipulator = True
+                    break
+            if not isManipulator:
+                cSize = np.sum(cImage)
+                if cSize > cMax:
+                    cMax = cSize
+                    output = cImage
+       #         try:
+       #             heapq.heappush(compSizes, (-cSize, cImage))
+       #         except ValueError:
+       #             continue
+       # count = 0
+       # while compSizes:
+       #     output = heapq.heappop(compSizes)
+       #     count += 1
+       #     if count == 1:
+       #         break
+        #return output[1]
+        return output
 
     def __getFaceSize(self, face):
         """
@@ -552,7 +620,9 @@ class color_detector:
             if np.sum(binary[i,:,0] > 0):
                 for j in range(size[1]):
                     if(binary.item(i, j, 0) > 0):
-                        labels[i][j] = self.__findLabel(labels[i][j], linked)
+                        lab = labels[i][j]
+                        labels[i][j] = self.__findLabel(lab, linked)
+                        linked[lab] = [labels[i][j]]
                         if(labels[i][j] not in uniqLabels):
                             uniqLabels.append(labels[i][j])
                             imageOut = np.zeros(shape=size, dtype="uint8")
@@ -584,7 +654,7 @@ class color_detector:
             nLabels.append(labels[x][y-1])
         if x > 0 and y+1 < size[1] and image.item(x-1, y+1, 0) > 0:
             neighbours.append((x-1, y+1))
-            nLabels.append(labels[x-1][y-1])
+            nLabels.append(labels[x-1][y+1])
         nLabels = filter(lambda a: a != 0, nLabels)
         return neighbours, nLabels
 
