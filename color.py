@@ -125,14 +125,15 @@ class color_detector:
         nextDomino = self.getNextDomino(image)
         if nextDomino:
             relDist, relAngle, origin, originImage = self.getPosRelative(image, nextDomino)
-            outImage = self.drawPoint(image.copy(), (nextDomino[0], nextDomino[1]), size=10)
-            self.drawLocation(outImage, (origin[0], origin[1]), origin[2])
-            #print 'Rel angle ', relAngle, origin[2]
-            self.drawLocation(outImage, (origin[0], origin[1]) , origin[2] + relAngle)
-            pixelDist, distImage = self.getLongEdgeLength(origin, originImage)
-            relDist *= 83/(pixelDist/2)
-            return (relDist, relAngle, nextDomino[2], outImage)
-        return nextDomino
+            if relDist > -1:
+                outImage = self.drawPoint(image.copy(), (nextDomino[0], nextDomino[1]), size=10)
+                self.drawLocation(outImage, (origin[0], origin[1]), origin[2])
+                #print 'Rel angle ', relAngle, origin[2]
+                self.drawLocation(outImage, (origin[0], origin[1]) , origin[2] + relAngle)
+                pixelDist, distImage = self.getLongEdgeLength(origin, originImage)
+                relDist *= 83/(pixelDist/2)
+                return (relDist, relAngle, nextDomino[2], outImage)
+        return ()
 
     def getLongEdgeLength(self, faceTuple, image):
         """
@@ -182,7 +183,7 @@ class color_detector:
             #cv2.imshow("images", np.hstack([image, originImage]))
             #cv2.waitKey(0)
             return (xPos, yPos, orientation), output
-        return ()
+        return (), -1
 
     def __getBlack(self, image):
         invImage = cv2.bitwise_not(image.copy())
@@ -287,9 +288,10 @@ class color_detector:
             y2 = points[2][1]
             m2 = float(points[3][1] - points[2][1])/float(points[3][0] - points[2][0])
             #fprint m1, m2
-            xPos = (y2 - y1 + m1 * x1 - m2 * x2)/(m1-m2)
-            yPos = m1 * (xPos -x1) + y1
-            return int(yPos), int(xPos)
+            if(m1-m1) != 0:
+                xPos = (y2 - y1 + m1 * x1 - m2 * x2)/(m1-m2)
+                yPos = m1 * (xPos -x1) + y1
+                return int(yPos), int(xPos)
         return -1, -1
 
     def __reversePoints(self, points):
