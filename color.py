@@ -165,23 +165,23 @@ class color_detector:
         :return tuple (xPos, yPos, orientation)
         """
         output = self.__getBlack(image)
-        #print "Skeleton..."
-        #cv2.imshow("images", np.hstack([image, output]))
-        #cv2.waitKey(0)
+        print "Skeleton..."
+        cv2.imshow("images", np.hstack([image, output]))
+        cv2.waitKey(0)
         output = self.__getOriginOnly(output)
-        #cv2.imshow("images", np.hstack([image, output]))
-        #cv2.waitKey(0)
+        cv2.imshow("images", np.hstack([image, output]))
+        cv2.waitKey(0)
         skel = self.__blur(self.__getSkeleton(output), 3)
         #cv2.imshow("images", np.hstack([image, skel]))
         #cv2.waitKey(0)
         xtremes = self.__getExtremePoints(skel)
-        xPos, yPos = self.__getIntersection(xtremes)
+        xPos, yPos = self.__getIntersection(xtremes, output)
         if xPos > -1:
             orientation = self.__getOrientationPoints(xPos, yPos, xtremes, image.copy())
             originImage = self.drawLocation(image.copy(), (xPos, yPos), orientation)
-            #print "Origin..", orientation
-            #cv2.imshow("images", np.hstack([image, originImage]))
-            #cv2.waitKey(0)
+            print "Origin..", orientation
+            cv2.imshow("images", np.hstack([image, originImage]))
+            cv2.waitKey(0)
             return (xPos, yPos, orientation), output
         return (), -1
 
@@ -269,7 +269,7 @@ class color_detector:
         #cv2.waitKey(0)
         return math.atan2(points[maxPoint][1] - yPos,points[maxPoint][0] - xPos) * 180 / math.pi
 
-    def __getIntersection(self, points):
+    def __getIntersection(self, points, image):
         """
             Finds point where cross intersects given by line endpoints.
             Ie center of origin
@@ -278,20 +278,20 @@ class color_detector:
         """
         if points:
             points = self.__reversePoints(points)
-            #cv2.line(image, points[0], points[1], (255,255,255))
-            # cv2.line(image, points[2], points[3], (255, 255, 255))
-
+            cv2.line(image, points[0], points[1], (255,255,255))
+            cv2.line(image, points[2], points[3], (255, 255, 255))
+            cv2.imshow("images", image)
+            cv2.waitKey(0)
             x1 = points[0][0]
             y1 = points[0][1]
             m1 = float(points[1][1] - points[0][1])/float(points[1][0] - points[0][0])
             x2 = points[2][0]
             y2 = points[2][1]
             m2 = float(points[3][1] - points[2][1])/float(points[3][0] - points[2][0])
-            #fprint m1, m2
-            if(m1-m1) != 0:
-                xPos = (y2 - y1 + m1 * x1 - m2 * x2)/(m1-m2)
-                yPos = m1 * (xPos -x1) + y1
-                return int(yPos), int(xPos)
+            print m1, m2
+            xPos = (y2 - y1 + m1 * x1 - m2 * x2)/(m1-m2)
+            yPos = m1 * (xPos -x1) + y1
+            return int(yPos), int(xPos)
         return -1, -1
 
     def __reversePoints(self, points):
@@ -403,27 +403,16 @@ class color_detector:
         components = self.__getConnectedComponents(image)
         for cImage in components:
             isManipulator = False
-            for i in range(size[1]):
-                if cImage[0,i,0] > 0:
-                    output -= cImage
-                    isManipulator = True
-                    break
+            #for i in range(size[1]):
+               # if cImage[0,i,0] > 0:
+               #     output -= cImage
+            #        isManipulator = True
+            #        break
             if not isManipulator:
                 cSize = np.sum(cImage)
                 if cSize > cMax:
                     cMax = cSize
                     output = cImage
-       #         try:
-       #             heapq.heappush(compSizes, (-cSize, cImage))
-       #         except ValueError:
-       #             continue
-       # count = 0
-       # while compSizes:
-       #     output = heapq.heappop(compSizes)
-       #     count += 1
-       #     if count == 1:
-       #         break
-        #return output[1]
         return output
 
     def __getFaceSize(self, face):
