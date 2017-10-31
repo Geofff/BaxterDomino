@@ -26,7 +26,7 @@ class image_converter:
         self.position = ()
         self.distance = {}
         self.msg = np.array([])
-        self.lastImage = []
+        self.lastImage = np.array([])
 
     def display_image(self):
         print('Publishing to display')
@@ -63,7 +63,7 @@ class image_converter:
         :return tuple (positon in mm, angle in degree +CCW)
         """
         self.position = ()
-        if self.lastImage:
+        if self.lastImage.shape[0] > :
             nextDomino = self.cd.toNextDomino(self.lastImage)
             if nextDomino:
                 self.msg = nextDomino[3]
