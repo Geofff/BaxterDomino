@@ -62,16 +62,20 @@ class image_converter:
             Returns positon of next domino relative to origin
         :return tuple (positon in mm, angle in degree +CCW)
         """
+        print("Next Domino...")
         self.position = ()
-        if self.lastImage.shape[0] > :
+        if self.lastImage.shape[0] > 0:
             nextDomino = self.cd.toNextDomino(self.lastImage)
             if nextDomino:
                 self.msg = nextDomino[3]
                 if not self.position:
-                    print("Next Domino...")
                     self.position = (nextDomino[0], nextDomino[1], nextDomino[2])
                 self.display_image()
                 self.msg = np.array([])
+                print("Domino found at" self.position)
+            else:
+                print("No dominoes found")
+
         return self.position
 
 def main(args):
