@@ -6,7 +6,7 @@ import roslib
 import sys
 import rospy
 import cv2
-import edge
+import time
 
 import color
 import numpy as np
@@ -29,6 +29,8 @@ class image_converter:
         self.position = ()
         self.distance = {}
         self.msg = []
+        self.lastReceived = time.time()
+        self.sampleRate = 0 #Seconds per frame
         #self.left_sensor = rospy.Subscriber(root_name + sensor_name[0], Range,
         #                    callback=self.sensorCallback, callback_args="left", queue_size=1)
         #self.right_sensor = rospy.Subscriber(root_name + sensor_name[1], Range,
@@ -41,33 +43,37 @@ class image_converter:
             cv2.waitKey(1)
             msg = self.bridge.cv2_to_imgmsg(cv2.resize(self.msg, (1024, 600), interpolation=cv2.INTER_CUBIC), "bgr8")
             self.image_pub.publish(msg)
-            rospy.sleep(1)
+            #rospy.sleep(1)
         except CvBridgeError as e:
             print(e)
 
     def callback(self, data):
-        try:
-            cv_image = self.bridge.imgmsg_to_cv2(data, "bgr8")
-        except CvBridgeError as e:
-            print(e)
-        #print("Obtained image..")
-        #print("Display Edges...")
-        #cv2.imshow("images", np.hstack([cv_image, edgeImage]))
-        #cv2.waitKey(0)
-        nextDomino = self.cd.toNextDomino(cv_image)
-        if nextDomino:
-            #cv2.imshow("images", np.hstack([cv_image, nextDomino[2]]))
+
+        if time.time() - self.lastReceived > self.sampleRate:
+            self.lastReceived = time.time()
+            try:
+                cv_image = self.bridge.imgmsg_to_cv2(data, "bgr8")
+            except CvBridgeError as e:
+                print(e)
+            #print("Obtained image..")
+            #print("Display Edges...")
+            #cv2.imshow("images", np.hstack([cv_image, edgeImage]))
             #cv2.waitKey(0)
-            self.msg = nextDomino[3]
-            if not self.position:
-                print("Next Domino...")
-                self.position = (nextDomino[0], nextDomino[1], nextDomino[2])
-            #print("Position: ",self.position)
-        else:
-            print("No faces found")
-            if not self.msg:
+            nextDomino = self.cd.toNextDomino(cv_image)
+            #self.cd.getAllDominoes(cv_image)
+            if nextDomino:
+                #cv2.imshow("images", np.hstack([cv_image, nextDomino[2]]))
+                #cv2.waitKey(0)
+                self.msg = nextDomino[3]
+                if not self.position:
+                    print("Next Domino...")
+                    self.position = (nextDomino[0], nextDomino[1], nextDomino[2])
+                #print("Position: ",self.position)
+            else:
+                print("No faces found")
                 self.msg = cv_image
-        self.display_image()
+            self.display_image()
+            self.sampleRate = time.time() - self.lastReceived
 
 
     def sensorCallback(self, msg, side):

@@ -85,9 +85,9 @@ class color_detector:
         for i in range(len(faceQueue)):
             results.append(heapq.heappop(faceQueue)[1])
             outImage = self.drawLocation(outImage, (results[i][0], results[i][1]), results[i][2])
-        print "All domino positions,.."
-        cv2.imshow("images", outImage)
-        cv2.waitKey(0)
+        #print "All domino positions,.."
+        #cv2.imshow("images", outImage)
+        #cv2.waitKey(0)
         #print("Faces found: ", len(results))
         return results
 
@@ -203,6 +203,8 @@ class color_detector:
         mask = cv2.inRange(hsv, lowerBound, upperBound)
         output = cv2.bitwise_and(invImage, invImage, mask=mask)
         output = cv2.medianBlur(output, 9)
+        #cv2.imshow("images", np.hstack([image, output]))
+        #cv2.waitKey(0)
         return output
 
 
@@ -288,20 +290,21 @@ class color_detector:
         """
         if points:
             points = self.__reversePoints(points)
-            cv2.line(image, points[0], points[1], (255,255,255))
-            cv2.line(image, points[2], points[3], (255, 255, 255))
-            #cv2.imshow("images", image)
-            #cv2.waitKey(0)
-            x1 = points[0][0]
-            y1 = points[0][1]
-            m1 = float(points[1][1] - points[0][1])/float(points[1][0] - points[0][0])
-            x2 = points[2][0]
-            y2 = points[2][1]
-            m2 = float(points[3][1] - points[2][1])/float(points[3][0] - points[2][0])
-            if m1 != m2:
-                xPos = (y2 - y1 + m1 * x1 - m2 * x2)/(m1-m2)
-                yPos = m1 * (xPos -x1) + y1
-                return int(yPos), int(xPos)
+            if len(points) == 4:
+                cv2.line(image, points[0], points[1], (255,255,255))
+                cv2.line(image, points[2], points[3], (255, 255, 255))
+                #cv2.imshow("images", image)
+                #cv2.waitKey(0)
+                x1 = points[0][0]
+                y1 = points[0][1]
+                m1 = float(points[1][1] - points[0][1])/float(points[1][0] - points[0][0])
+                x2 = points[2][0]
+                y2 = points[2][1]
+                m2 = float(points[3][1] - points[2][1])/float(points[3][0] - points[2][0])
+                if m1 != m2:
+                    xPos = (y2 - y1 + m1 * x1 - m2 * x2)/(m1-m2)
+                    yPos = m1 * (xPos -x1) + y1
+                    return int(yPos), int(xPos)
         return -1, -1
 
     def __reversePoints(self, points):
@@ -312,7 +315,8 @@ class color_detector:
         """
         output = []
         for p in points:
-            output.append(((p[1]), p[0]))
+            if p:
+                output.append(((p[1]), p[0]))
         return output
 
     def __getExtremePoints(self, image):
@@ -324,24 +328,40 @@ class color_detector:
         imOut = image.copy()
         result = []
         size = image.shape
+        #cv2.imshow("images", image)
+        #cv2.waitKey(0)
         first = ()
         last = ()
+        half = image.copy()
         for i in range(size[0]):
             for j in range(size[1]):
                 if image[i,j,0] > 0:
                     if not first: first = (i,j)
                     else: last = (i, j)
-        cv2.line(imOut, (first[1], first[0]), (last[1], last[0]), (0,0,0), thickness=3)
-        result.append(first)
-        result.append(last)
-        first = ()
-        for i in range(size[0]):
+        if first and last:
+            cv2.line(imOut, (first[1], first[0]), (last[1], last[0]), (0,0,0), thickness=3)
+            #print "Removed"
+            half = self.drawPoint(imOut.copy(), first)
+            half = self.drawPoint(half, last)
+            #cv2.imshow("images", half)
+            #cv2.waitKey(0)
+            result.append(first)
+            result.append(last)
+            first = ()
             for j in range(size[1]):
-                if imOut[i,j,0] > 0:
-                    if not first: first =  (i,j)
-                    else: last = (i,j)
-        result.append(first)
-        result.append(last)
+                for i in range(size[0]):
+                    if imOut[i,j,0] > 0:
+                        if not first: first =  (i,j)
+                        else: last = (i,j)
+            result.append(first)
+            result.append(last)
+            print "extremes"
+            xPoints = image.copy()
+            for p in result:
+                if p:
+                    self.drawPoint(xPoints, p)
+            #cv2.imshow("images",np.hstack([half, xPoints]) )
+            #cv2.waitKey(0)
         return result
 
     def __blur(self, image, num):
@@ -413,17 +433,17 @@ class color_detector:
         cMax = 0
         components = self.__getConnectedComponents(image)
         for cImage in components:
-            isManipulator = False
+            #isManipulator = False
             #for i in range(size[1]):
-               # if cImage[0,i,0] > 0:
-               #     output -= cImage
+            #    if cImage[0,i,0] > 0:
+            #        output -= cImage
             #        isManipulator = True
             #        break
-            if not isManipulator:
-                cSize = np.sum(cImage)
-                if cSize > cMax:
-                    cMax = cSize
-                    output = cImage
+            #if not isManipulator:
+            cSize = np.sum(cImage)
+            if cSize > cMax:
+                cMax = cSize
+                output = cImage
         return output
 
     def __getFaceSize(self, face):
