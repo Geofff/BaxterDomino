@@ -25,7 +25,7 @@ class image_converter:
         self.cd = color.color_detector()
         self.position = ()
         self.distance = {}
-        self.msg = []
+        self.msg = np.array([])
         self.lastImage = []
 
     def display_image(self):
@@ -49,7 +49,7 @@ class image_converter:
             self.lastImage = self.bridge.imgmsg_to_cv2(data, "bgr8")
         except CvBridgeError as e:
             print(e)
-        if not self.msg:
+        if self.msg.shape[0] > 0:
             self.msg = self.lastImage
             self.display_image()
 
@@ -71,7 +71,7 @@ class image_converter:
                     print("Next Domino...")
                     self.position = (nextDomino[0], nextDomino[1], nextDomino[2])
                 self.display_image()
-                self.msg = ()
+                self.msg = np.array([])
         return self.position
 
 def main(args):
