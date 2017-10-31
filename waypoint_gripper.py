@@ -109,8 +109,8 @@ class Waypoints(object):
         points = []
         for i in range(num):
                 p = []
-                p.append(self._find_approach(source, self._hover_distance,-0.05*i))
-                p.append(self._find_approach(source, 0,-0.05*i))
+                p.append(self._find_approach(source, self._hover_distance,-0.05*i,ang=3.1415))
+                p.append(self._find_approach(source, 0,-0.05*i,ang=3.1415))
                 points.append(p)
         return points
 
@@ -310,6 +310,9 @@ def main():
         default=1, type=int,
         help="Number of times to loop the program"
     )
+    parser.add_argument(
+        '-s', '--simulate',
+        action='store_true', default=False)
     args = parser.parse_args(rospy.myargv()[1:])
 
     print("Initializing node... ")
@@ -357,7 +360,9 @@ def main():
     waypoints._limb.move_to_joint_positions(view_point_approach)
     fake_dom_1 = [100.0, 0.0, 0.0]
     fake_dom_2 = [100.0, 180.0, 0.0]
-    fake_dom_3 = [150.0, 90.0, 90.0]
+    fake_dom_3 = [50.0, 90.0, 90.0]
+    fake_dom_4 = [80.0, 270.0, 45.0]
+    fake_doms=[fake_dom_1,fake_dom_2,fake_dom_3,fake_dom_4]
     ic = image_converter()
     ic.active = True
     print("Initialising...")
@@ -365,10 +370,14 @@ def main():
     num_waypoints = 4
     waypoint_path = waypoints.generate_path(waypoints._source_point, num_waypoints)
     waypointInd = 0
+    waypoints._limb.set_joint_position_speed(0.3)
     try:
         while 1:
                 # Find domino to pick up
-                domino = ic.getNextDomino()
+                if args.simulate:
+                        domino = fake_doms[waypointInd]
+                else:
+                        domino = ic.getNextDomino()
                 ic.active = False
                 if len(domino) != 3:
                         continue
@@ -381,9 +390,9 @@ def main():
                 dx = math.cos(camRot+3.1415+math.radians(domino[1]))*domino[0]/1000
                 dy = math.sin(camRot+3.1415+math.radians(domino[1]))*domino[0]/1000
                 print("Domino is [%f] mm away. Normalised to baxter it is [%f:%f]m away" % (domino[0], dx, dy))
-                domAng = math.radians(domino[2])+camRot+3.1415
-                approach = waypoints._find_approach(waypoints._calibration_point, args.distance, dx, dy, domAng)
-                pos = waypoints._find_approach(waypoints._calibration_point, 0, dx, dy, domAng)
+                domAng = math.radians(domino[2])+camRot
+                approach = waypoints._find_approach(waypoints._calibration_point, args.distance, dx, dy, ang=domAng)
+                pos = waypoints._find_approach(waypoints._calibration_point, 0, dx, dy, ang=domAng)
                 waypoints._gripper.open()
                 waypoints._limb.move_to_joint_positions(approach)
                 waypoints._limb.move_to_joint_positions(pos)
@@ -398,15 +407,14 @@ def main():
                 rospy.sleep(1.0)
                 
                 waypoints._limb.move_to_joint_positions(waypoint_path[waypointInd][0])
+                rospy.sleep(1.0)
                 waypointInd = waypointInd + 1
                 waypoints._limb.move_to_joint_positions(view_point_approach)
 
-                if (waypointInd > num_waypoints):
+                if (waypointInd >= num_waypoints):
                         # Time to knock over
-                        self._knock_approach = waypoints._find_approach(waypoints_path[0][1], 0.05, 0.05)
-	                self._knock_approach['left_w2']+=3.14159/2
-	                self._knock = waypoints._find_approach(waypoints_path[0][1], 0.05, -0.05)
-	                self._knock['left_w2']+=3.14159/2
+                        knock_approach = waypoints._find_approach(waypoints._source_point, 0.0, 0.05,ang=3.14159/2)
+	                knock = waypoints._find_approach(waypoints._source_point, 0.0, -0.05,ang=3.14159/2)
                         waypoints._gripper.close()
                         rospy.sleep(1)
                         waypoints._limb.move_to_joint_positions(knock_approach)

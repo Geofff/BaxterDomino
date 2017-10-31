@@ -92,7 +92,7 @@ class color_detector:
                 pixelDist, distImage = self.getLongEdgeLength(origin, originImage)
                 if pixelDist == 0:
                         return ()
-                relDist *= 180/(pixelDist) #180 - length of long origin in mm
+                relDist *= 180/(pixelDist/2) #180 - length of long origin in mm
                 return (relDist, relAngle, relOrientation, outImage)
         return ()
 
