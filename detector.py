@@ -43,7 +43,7 @@ class image_converter:
             cv2.waitKey(1)
             msg = self.bridge.cv2_to_imgmsg(cv2.resize(self.msg, (1024, 600), interpolation=cv2.INTER_CUBIC), "bgr8")
             self.image_pub.publish(msg)
-            #rospy.sleep(1)
+            rospy.sleep(1)
         except CvBridgeError as e:
             print(e)
 

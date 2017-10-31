@@ -185,7 +185,7 @@ class color_detector:
         #cv2.waitKey(0)
         xtremes = self.__getExtremePoints(skel)
         xPos, yPos = self.__getIntersection(xtremes, output)
-        print xPos, yPos
+        #print xPos, yPos
         if xPos > -1:
             orientation = self.__getOrientationPoints(xPos, yPos, xtremes, image.copy())
             originImage = self.drawLocation(image.copy(), (xPos, yPos), orientation)
@@ -355,7 +355,7 @@ class color_detector:
                         else: last = (i,j)
             result.append(first)
             result.append(last)
-            print "extremes"
+            #print "extremes"
             xPoints = image.copy()
             for p in result:
                 if p:
