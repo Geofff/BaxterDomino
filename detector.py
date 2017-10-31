@@ -6,7 +6,6 @@ import roslib
 import sys
 import rospy
 import cv2
-import time
 
 import color
 import numpy as np
@@ -19,9 +18,7 @@ from matplotlib import pyplot as plt
 
 class image_converter:
     def __init__(self):
-        root_name = "/robot/range/"
         image_topic = "/cameras/left_hand_camera/image"
-        sensor_name = ["left_hand_range/state", "right_hand_range/state"]
         self.image_pub = rospy.Publisher("/robot/xdisplay", Image, latch=True, queue_size=1)
         self.bridge = CvBridge()
         self.image_sub = rospy.Subscriber(image_topic, Image, self.callback)
@@ -29,12 +26,7 @@ class image_converter:
         self.position = ()
         self.distance = {}
         self.msg = []
-        self.lastReceived = time.time()
-        self.sampleRate = 0 #Seconds per frame
-        #self.left_sensor = rospy.Subscriber(root_name + sensor_name[0], Range,
-        #                    callback=self.sensorCallback, callback_args="left", queue_size=1)
-        #self.right_sensor = rospy.Subscriber(root_name + sensor_name[1], Range,
-        #                                   callback=self.sensorCallback, callback_args="right", queue_size=1)
+        self.lastImage = []
 
     def display_image(self):
         print('Publishing to display')
@@ -48,33 +40,18 @@ class image_converter:
             print(e)
 
     def callback(self, data):
-
-        if time.time() - self.lastReceived > self.sampleRate:
-            self.lastReceived = time.time()
-            try:
-                cv_image = self.bridge.imgmsg_to_cv2(data, "bgr8")
-            except CvBridgeError as e:
-                print(e)
-            #print("Obtained image..")
-            #print("Display Edges...")
-            #cv2.imshow("images", np.hstack([cv_image, edgeImage]))
-            #cv2.waitKey(0)
-            nextDomino = self.cd.toNextDomino(cv_image)
-            #self.cd.getAllDominoes(cv_image)
-            if nextDomino:
-                #cv2.imshow("images", np.hstack([cv_image, nextDomino[2]]))
-                #cv2.waitKey(0)
-                self.msg = nextDomino[3]
-                if not self.position:
-                    print("Next Domino...")
-                    self.position = (nextDomino[0], nextDomino[1], nextDomino[2])
-                #print("Position: ",self.position)
-            else:
-                print("No faces found")
-                self.msg = cv_image
+        """
+            Processes message received from camera. only processes images after processing
+            of previous message has completed. Throws frames in between.
+        :param data image from camera
+        """
+        try:
+            self.lastImage = self.bridge.imgmsg_to_cv2(data, "bgr8")
+        except CvBridgeError as e:
+            print(e)
+        if not self.msg:
+            self.msg = self.lastImage
             self.display_image()
-            self.sampleRate = time.time() - self.lastReceived
-
 
     def sensorCallback(self, msg, side):
         self.distance[side] = msg.range
@@ -85,9 +62,17 @@ class image_converter:
             Returns positon of next domino relative to origin
         :return tuple (positon in mm, angle in degree +CCW)
         """
-        position = self.position
         self.position = ()
-        return position
+        if self.lastImage:
+            nextDomino = self.cd.toNextDomino(self.lastImage)
+            if nextDomino:
+                self.msg = nextDomino[3]
+                if not self.position:
+                    print("Next Domino...")
+                    self.position = (nextDomino[0], nextDomino[1], nextDomino[2])
+                self.display_image()
+                self.msg = ()
+        return self.position
 
 def main(args):
     #setup_cameras()
@@ -97,6 +82,10 @@ def main(args):
     rospy.init_node('image_converter', anonymous=True)
     try:
         rospy.spin()
+        for i in range(10):
+            cv2.waitKey(0)
+            print("Displaying...")
+            ic.getNextDomino()
     except KeyboardInterrupt:
         print("Shutting down")
     cv2.destroyAllWindows()
