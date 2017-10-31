@@ -71,8 +71,7 @@ class color_detector:
         :param image from camera
         :return list of tuples (xPos, yPos, orientation, locationImage)
         """
-        #edges = self.ed.getEdgesF(image, 1000, 5000)
-        #edgeImage = self.ed.mergeEdges(image, edges)
+
         faces = self.filterColors(image)
         faceQueue = []
         results = []
@@ -82,8 +81,13 @@ class color_detector:
             location = self.drawLocation(face, (xPos, yPos), phi)
             faceSize = self.__getFaceSize(face)
             heapq.heappush(faceQueue, (-faceSize, (xPos, yPos, phi, location)))
+        outImage = image.copy()
         for i in range(len(faceQueue)):
             results.append(heapq.heappop(faceQueue)[1])
+            outImage = self.drawLocation(outImage, (results[i][0], results[i][1]), results[i][2])
+        print "All domino positions,.."
+        cv2.imshow("images", outImage)
+        cv2.waitKey(0)
         #print("Faces found: ", len(results))
         return results
 
@@ -95,8 +99,6 @@ class color_detector:
         :param image from camera
         :return tuple (xPos, yPos, orientation, locationImage)
         """
-        #edges = self.ed.getEdgesF(image, 200, 3000)
-        #edgeImage = self.ed.mergeEdges(image, edges)
         faces = self.filterColors(image)
         max = 0
         maxDomino = -1
@@ -108,11 +110,11 @@ class color_detector:
         if maxDomino > -1:
             xPos, yPos = self.__getCentres(faces[maxDomino])
             phi = self.__getOrientation(faces[maxDomino])
-            locationImage = self.drawLocation(faces[maxDomino], (xPos, yPos), phi)
+            locationImage = self.drawLocation(faces[maxDomino].copy(), (xPos, yPos), phi)
             #print "Next Domino"
             #cv2.imshow("images", np.hstack([image,locationImage]))
             #cv2.waitKey(0)
-            return (xPos, yPos, phi, locationImage)
+            return (xPos, yPos, phi, faces[maxDomino])
         return ()
 
     def toNextDomino(self, image):
@@ -124,15 +126,22 @@ class color_detector:
         """
         nextDomino = self.getNextDomino(image)
         if nextDomino:
+            dominoLength, lengthOutput = self.getLongEdgeLength(nextDomino, nextDomino[3])
+            #print(dominoLength)
+            #cv2.imshow("images", np.hstack([nextDomino[3], lengthOutput]))
+            #cv2.waitKey(0)
+            xDom = nextDomino[0] + dominoLength/4 * math.cos(nextDomino[2] * math.pi / 180)
+            yDom = nextDomino[1] + dominoLength / 4 * math.sin(nextDomino[2] * math.pi / 180)
+            nextDomino = (xDom, yDom, nextDomino[2])
             relDist, relAngle, origin, originImage = self.getPosRelative(image, nextDomino)
             if relDist > -1:
+                relOrientation = nextDomino[2] - origin[2]
                 outImage = self.drawPoint(image.copy(), (nextDomino[0], nextDomino[1]), size=10)
                 self.drawLocation(outImage, (origin[0], origin[1]), origin[2])
-                #print 'Rel angle ', relAngle, origin[2]
                 self.drawLocation(outImage, (origin[0], origin[1]) , origin[2] + relAngle)
                 pixelDist, distImage = self.getLongEdgeLength(origin, originImage)
                 relDist *= 83/(pixelDist/2)
-                return (relDist, relAngle, nextDomino[2], outImage)
+                return (relDist, relAngle, relOrientation, outImage)
         return ()
 
     def getLongEdgeLength(self, faceTuple, image):
@@ -151,10 +160,10 @@ class color_detector:
             y = faceTuple[1] + i * grad
             if abs(int(y)) < size[1] and image[x, int(y), 0] > 0:
                 max = (x,y)
-                output[x,int(y),:] = [128,128,128]
+                output[x,int(y),:] = [255,255,255]
                 #output[2 * faceTuple[0] - x, int(2 * faceTuple[1] - y), :] = [255,255,255]
             i += 1
-        dist = math.sqrt(pow(max[0]-faceTuple[0],2) + pow(max[0]-faceTuple[1],2))
+        dist = math.sqrt(pow(float(max[0]-faceTuple[0]),2) + pow(float(max[1]-faceTuple[1]),2))
         return dist * 2 , output
 
     def getOrigin(self, image):
@@ -165,23 +174,24 @@ class color_detector:
         :return tuple (xPos, yPos, orientation)
         """
         output = self.__getBlack(image)
-        print "Skeleton..."
-        cv2.imshow("images", np.hstack([image, output]))
-        cv2.waitKey(0)
+        #print "Skeleton..."
+        #cv2.imshow("images", np.hstack([image, output]))
+        #cv2.waitKey(0)
         output = self.__getOriginOnly(output)
-        cv2.imshow("images", np.hstack([image, output]))
-        cv2.waitKey(0)
+        #cv2.imshow("images", np.hstack([image, output]))
+        #cv2.waitKey(0)
         skel = self.__blur(self.__getSkeleton(output), 3)
         #cv2.imshow("images", np.hstack([image, skel]))
         #cv2.waitKey(0)
         xtremes = self.__getExtremePoints(skel)
         xPos, yPos = self.__getIntersection(xtremes, output)
+        print xPos, yPos
         if xPos > -1:
             orientation = self.__getOrientationPoints(xPos, yPos, xtremes, image.copy())
             originImage = self.drawLocation(image.copy(), (xPos, yPos), orientation)
-            print "Origin..", orientation
-            cv2.imshow("images", np.hstack([image, originImage]))
-            cv2.waitKey(0)
+            #print "Origin..", orientation
+            #cv2.imshow("images", np.hstack([skel, originImage]))
+            # cv2.waitKey(0)
             return (xPos, yPos, orientation), output
         return (), -1
 
@@ -207,8 +217,8 @@ class color_detector:
         size = image.shape
         image = self.drawPoint(image, (center[0], center[1]))
         #print angle
-        x = center[0] + 30 * math.cos(angle * math.pi / 180)
-        y = center[1] + 30 * math.sin(angle * math.pi / 180)
+        x = center[0] + 30 * math.cos(angle * math.pi / 180.0)
+        y = center[1] + 30 * math.sin(angle * math.pi / 180.0)
         #x = center[0] + 30 * math.sin((angle + 180) * math.pi / 180)
         #y = center[1] + 30 * math.cos((angle + 180) * math.pi / 180)
         cv2.line(image, (center[1], center[0]), (int(y), int(x)), (255,255,255))
@@ -280,18 +290,18 @@ class color_detector:
             points = self.__reversePoints(points)
             cv2.line(image, points[0], points[1], (255,255,255))
             cv2.line(image, points[2], points[3], (255, 255, 255))
-            cv2.imshow("images", image)
-            cv2.waitKey(0)
+            #cv2.imshow("images", image)
+            #cv2.waitKey(0)
             x1 = points[0][0]
             y1 = points[0][1]
             m1 = float(points[1][1] - points[0][1])/float(points[1][0] - points[0][0])
             x2 = points[2][0]
             y2 = points[2][1]
             m2 = float(points[3][1] - points[2][1])/float(points[3][0] - points[2][0])
-            print m1, m2
-            xPos = (y2 - y1 + m1 * x1 - m2 * x2)/(m1-m2)
-            yPos = m1 * (xPos -x1) + y1
-            return int(yPos), int(xPos)
+            if m1 != m2:
+                xPos = (y2 - y1 + m1 * x1 - m2 * x2)/(m1-m2)
+                yPos = m1 * (xPos -x1) + y1
+                return int(yPos), int(xPos)
         return -1, -1
 
     def __reversePoints(self, points):
@@ -321,12 +331,13 @@ class color_detector:
                 if image[i,j,0] > 0:
                     if not first: first = (i,j)
                     else: last = (i, j)
+        cv2.line(imOut, (first[1], first[0]), (last[1], last[0]), (0,0,0), thickness=3)
         result.append(first)
         result.append(last)
         first = ()
-        for j in range(size[1]):
-            for i in range(size[0]):
-                if image[i,j,0] > 0:
+        for i in range(size[0]):
+            for j in range(size[1]):
+                if imOut[i,j,0] > 0:
                     if not first: first =  (i,j)
                     else: last = (i,j)
         result.append(first)
@@ -457,7 +468,6 @@ class color_detector:
             result.append(cv2.medianBlur(output, 9))
         return result
 
-
     def __getOrientation(self, image):
         """
             Gets the orientation of an image of one face of the dominoe
@@ -465,55 +475,24 @@ class color_detector:
         :return orientation of face in degrees
         """
         size = image.shape
-        #object = self.__filterAbsolute(image)
-        object1 = image.copy()
-        x1 = []
-        y1 = []
+        x = []
+        y = []
+        output = image.copy()
+
         for i in range(size[0]):
-            row = object1[i, :, 0]
-            if (np.sum(row) > 0):
-                x1.append(i)
-                yCoord = int(np.average(np.where(row > 0)))
-                y1.append(yCoord)
-                object1[i, yCoord, :] = [255,255,255]
-        object2 = image.copy()
-        x2 = []
-        y2 = []
-        for i in range(size[1]):
-            row = object2[:, i, 0]
-            if(np.sum(row) > 0):
-                y2.append(i)
-                xCoord = int(np.average(np.where(row>0)))
-                x2.append(xCoord)
-                object2[xCoord, i, :] = [255,255,255]
-        #cv2.imshow("images", np.hstack([object1, object2]))
-        #cv2.waitKey(0)
-        if len(x1) < len(x2):
-            minLength = len(x1)
-        else:
-            minLength = len(x2)
-        object3 = image.copy()
-        grad1 = self.__getGradient(x1, y1)
-        grad2 = self.__getGradient(x2, y2)
-        if self.__isPerpendicular(grad1, grad2):
-            if self.__getRange(x1, y1) > self.__getRange(x2, y2):
-                grad = grad1
-            else:
-                grad = grad2
-        else:
-            grad = (grad1 + grad2) /2
-
-        #for i in range(minLength):
-        #    x1[i] = int((x1[i] + x2[i])/2)
-        ##    y1[i] = int((y1[i] + y2[i])/2)
-         #   object3[x1[i], y1[i], :] = [255,255,255]
-
-        #grad = self.__getGradient(x1, y1)
-        #cv2.imshow('images', np.hstack([object1+object2, object3]))
-        #cv2.waitKey(0)
-        if grad == float("inf"):
-            return 90
-        return math.atan(grad) * 180 / math.pi
+            for j in range(size[1]):
+                if image[i,j,0] > 0:
+                    x.append(i)
+                    y.append(j)
+                    output[i,j,:] = [255,255,255]
+        if x and y:
+            grad = self.__getGradient(x, y)
+            #cv2.imshow("images", np.hstack([image, output]))
+            #cv2.waitKey(0)
+            if grad == float("inf"):
+                return 90
+            return math.atan(grad) * 180 / math.pi
+        return 0
 
     def __isPerpendicular(self, grad1, grad2):
         """
@@ -543,8 +522,8 @@ class color_detector:
         :param yCoords
         :return gradient
         """
-        x = np.array(x, dtype=int)
-        y = np.array(y, dtype=int)
+        x = np.array(x, dtype=float)
+        y = np.array(y, dtype=float)
         xy = np.sum(x * y)
         xTot = np.sum(x)
         bot = x.size * np.sum(x * x) - xTot * xTot
@@ -689,13 +668,6 @@ def main():
     originImage = cd.drawLocation(img.copy(),(xPos, yPos), phi)
     cv2.imshow("images", np.hstack([img, originImage]))
     cv2.waitKey(0)
-    #for face in faces:
-        #cv2.imshow("images", np.hstack([img, face[0]]))
-    #    cv2.waitKey(0)
-    #edgeLength, lengthImage = cd.getLongEdgeLength(faces[0])
-    #print("Length: ", edgeLength)
-    #cv2.imshow("images", np.hstack([img, lengthImage]))
-   # cv2.waitKey(0)
     return 0
 
 if __name__ == '__main__':

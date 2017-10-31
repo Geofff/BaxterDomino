@@ -28,17 +28,18 @@ class image_converter:
         self.cd = color.color_detector()
         self.position = ()
         self.distance = {}
+        self.msg = []
         #self.left_sensor = rospy.Subscriber(root_name + sensor_name[0], Range,
         #                    callback=self.sensorCallback, callback_args="left", queue_size=1)
         #self.right_sensor = rospy.Subscriber(root_name + sensor_name[1], Range,
         #                                   callback=self.sensorCallback, callback_args="right", queue_size=1)
 
-    def display_image(self, msg):
+    def display_image(self):
         print('Publishing to display')
         try:
-            cv2.imshow("images", msg)
-            # cv2.waitKey(1)
-            msg = self.bridge.cv2_to_imgmsg(cv2.resize(msg, (1024, 600), interpolation=cv2.INTER_CUBIC), "bgr8")
+            cv2.imshow("images", self.msg)
+            cv2.waitKey(1)
+            msg = self.bridge.cv2_to_imgmsg(cv2.resize(self.msg, (1024, 600), interpolation=cv2.INTER_CUBIC), "bgr8")
             self.image_pub.publish(msg)
             rospy.sleep(1)
         except CvBridgeError as e:
@@ -54,18 +55,19 @@ class image_converter:
         #cv2.imshow("images", np.hstack([cv_image, edgeImage]))
         #cv2.waitKey(0)
         nextDomino = self.cd.toNextDomino(cv_image)
-        #print("Next Domino...")
         if nextDomino:
             #cv2.imshow("images", np.hstack([cv_image, nextDomino[2]]))
             #cv2.waitKey(0)
-            msg = nextDomino[3]
+            self.msg = nextDomino[3]
             if not self.position:
+                print("Next Domino...")
                 self.position = (nextDomino[0], nextDomino[1], nextDomino[2])
             #print("Position: ",self.position)
         else:
             print("No faces found")
-            msg = cv_image
-        self.display_image(msg)
+            if not self.msg:
+                self.msg = cv_image
+        self.display_image()
 
 
     def sensorCallback(self, msg, side):
@@ -77,7 +79,7 @@ class image_converter:
             Returns positon of next domino relative to origin
         :return tuple (positon in mm, angle in degree +CCW)
         """
-        position = self.postion
+        position = self.position
         self.position = ()
         return position
 
