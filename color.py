@@ -1,78 +1,33 @@
 #!/usr/bin/env python
-#Source: https://www.pyimagesearch.com/2014/08/04/opencv-python-color-detection/
 
 import sys
 import numpy as np
 import math
 import heapq
 import cv2
-import edge
 
 
 
 class color_detector:
 
     def __init__(self):
-        #BGR Format
         self.boundaries = [
-           # ([0, 0, 0], [10, 10, 10]),  # Black
-           # ([200, 150, 0], [255, 200, 50]),    #Blue
-           # ([50, 100, 25], [150, 255, 100])    #Green
-
-           #([50,50,30], [255, 100, 50]),       #Blue Lab
-           #([30, 30, 20], [50, 50, 40])        #Green Lab
             #HSI Format
             ([95, 110, 20], [120, 255, 200]), #Blue
             ([85, 50, 17], [105, 150,30])    #Green
-            #HSI Dark
-            #([10, 110, 30], [40, 140, 70])  #Blue
-
-
         ]
-        self.ed = edge.edge_detector()
-
-    def filterColors(self, image):
-        """
-            Finds each face of all dominoes in image
-        :param image to analyse
-        :return list of images of each domino face
-        """
-        results = []
-        #size = image.shape
-        #print "Size: ", size[0], " ", size[1]
-        #xPoint = 200
-        #yPoint = 350
-        #hsv_image = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
-        #for i in range(-5,5):
-        #    for j in range(-5,5):
-        #        print image.item((xPoint + i,yPoint + j,0)),
-        #        print image.item((xPoint + i, yPoint + j, 1)),
-        #        print image.item((xPoint + i, yPoint + j, 2))
-        #        image[xPoint + i, yPoint + j, :] = [255, 255, 255]
-        #cv2.imshow("images", image)
-        #cv2.waitKey(0)
-        colors = self.__getColors(image)
-        sides = []
-        #print "Displaying Colours: (", len(colors), ")"
-        for color in colors:
-            #cv2.imshow("images", np.hstack([image,color]))
-            #cv2.waitKey(0)
-            sides.extend(self.__getConnectedComponents(color))
-        #print "Showing Faces.."
-        #for side in sides:
-        #    cv2.imshow("images", np.hstack([image, side]))
-        #    cv2.waitKey(0)
-        return sides
 
     def getAllDominoes(self, image):
         """
             Finds all dominoes in the image and finds their position and
-            orientation ordered by face size
+            orientation ordered by face size (not relative origin)
         :param image from camera
         :return list of tuples (xPos, yPos, orientation, locationImage)
         """
-
-        faces = self.filterColors(image)
+        colors = self.__getColors(image)
+        faces = []
+        for color in colors:
+            faces.extend(self.__getConnectedComponents(color))
         faceQueue = []
         results = []
         for face in faces:
@@ -85,10 +40,6 @@ class color_detector:
         for i in range(len(faceQueue)):
             results.append(heapq.heappop(faceQueue)[1])
             outImage = self.drawLocation(outImage, (results[i][0], results[i][1]), results[i][2])
-        #print "All domino positions,.."
-        #cv2.imshow("images", outImage)
-        #cv2.waitKey(0)
-        #print("Faces found: ", len(results))
         return results
 
 
@@ -99,7 +50,10 @@ class color_detector:
         :param image from camera
         :return tuple (xPos, yPos, orientation, locationImage)
         """
-        faces = self.filterColors(image)
+        colors = self.__getColors(image)
+        faces = []
+        for color in colors:
+            faces.extend(self.__getConnectedComponents(color))
         max = 0
         maxDomino = -1
         for i, face in enumerate(faces):
@@ -111,9 +65,6 @@ class color_detector:
             xPos, yPos = self.__getCentres(faces[maxDomino])
             phi = self.__getOrientation(faces[maxDomino])
             locationImage = self.drawLocation(faces[maxDomino].copy(), (xPos, yPos), phi)
-            #print "Next Domino"
-            #cv2.imshow("images", np.hstack([image,locationImage]))
-            #cv2.waitKey(0)
             return (xPos, yPos, phi, faces[maxDomino])
         return ()
 
@@ -123,13 +74,12 @@ class color_detector:
             tuple if no faces are found
         :param image from camera
         :return tuple (relativeDistance, relativeAngle, locationImage)
+        :return empty if origin or domino not found
         """
         nextDomino = self.getNextDomino(image)
         if nextDomino:
             dominoLength, lengthOutput = self.getLongEdgeLength(nextDomino, nextDomino[3])
-            #print(dominoLength)
-            #cv2.imshow("images", np.hstack([nextDomino[3], lengthOutput]))
-            #cv2.waitKey(0)
+            #Get domino position 1/4 way along long axis
             xDom = nextDomino[0] + dominoLength/4 * math.cos(nextDomino[2] * math.pi / 180)
             yDom = nextDomino[1] + dominoLength / 4 * math.sin(nextDomino[2] * math.pi / 180)
             nextDomino = (xDom, yDom, nextDomino[2])
@@ -140,7 +90,7 @@ class color_detector:
                 self.drawLocation(outImage, (origin[0], origin[1]), origin[2])
                 self.drawLocation(outImage, (origin[0], origin[1]) , origin[2] + relAngle)
                 pixelDist, distImage = self.getLongEdgeLength(origin, originImage)
-                relDist *= 83/(pixelDist/2)
+                relDist *= 83/(pixelDist/2) #83 - length of long origin in mm
                 return (relDist, relAngle, relOrientation, outImage)
         return ()
 
@@ -151,7 +101,6 @@ class color_detector:
         :return edge distance and image of distance measured
         """
         grad = math.tan(faceTuple[2] * math.pi / 180)
-        #print(image)
         output = image.copy()
         size = image.shape
         max = (0,0)
@@ -161,7 +110,6 @@ class color_detector:
             if abs(int(y)) < size[1] and image[x, int(y), 0] > 0:
                 max = (x,y)
                 output[x,int(y),:] = [255,255,255]
-                #output[2 * faceTuple[0] - x, int(2 * faceTuple[1] - y), :] = [255,255,255]
             i += 1
         dist = math.sqrt(pow(float(max[0]-faceTuple[0]),2) + pow(float(max[1]-faceTuple[1]),2))
         return dist * 2 , output
@@ -174,28 +122,22 @@ class color_detector:
         :return tuple (xPos, yPos, orientation)
         """
         output = self.__getBlack(image)
-        #print "Skeleton..."
-        #cv2.imshow("images", np.hstack([image, output]))
-        #cv2.waitKey(0)
         output = self.__getOriginOnly(output)
-        #cv2.imshow("images", np.hstack([image, output]))
-        #cv2.waitKey(0)
         skel = self.__blur(self.__getSkeleton(output), 3)
-        #cv2.imshow("images", np.hstack([image, skel]))
-        #cv2.waitKey(0)
         xtremes = self.__getExtremePoints(skel)
         xPos, yPos = self.__getIntersection(xtremes, output)
-        #print xPos, yPos
         if xPos > -1:
             orientation = self.__getOrientationPoints(xPos, yPos, xtremes, image.copy())
-            originImage = self.drawLocation(image.copy(), (xPos, yPos), orientation)
-            #print "Origin..", orientation
-            #cv2.imshow("images", np.hstack([skel, originImage]))
-            # cv2.waitKey(0)
+            #originImage = self.drawLocation(image.copy(), (xPos, yPos), orientation)
             return (xPos, yPos, orientation), output
         return (), -1
 
     def __getBlack(self, image):
+        """
+            Filters out all colours except black for finding origin
+        :param image to analyse
+        :return inverted image with only black objects
+        """
         invImage = cv2.bitwise_not(image.copy())
         hsv = cv2.cvtColor(invImage, cv2.COLOR_BGR2HSV)
         lowerBound = np.array([0, 0, 235], dtype="uint8")
@@ -203,8 +145,6 @@ class color_detector:
         mask = cv2.inRange(hsv, lowerBound, upperBound)
         output = cv2.bitwise_and(invImage, invImage, mask=mask)
         output = cv2.medianBlur(output, 9)
-        #cv2.imshow("images", np.hstack([image, output]))
-        #cv2.waitKey(0)
         return output
 
 
@@ -216,13 +156,9 @@ class color_detector:
         :param angle of domino in degrees:
         :return image with position drawn in white:
         """
-        size = image.shape
         image = self.drawPoint(image, (center[0], center[1]))
-        #print angle
         x = center[0] + 30 * math.cos(angle * math.pi / 180.0)
         y = center[1] + 30 * math.sin(angle * math.pi / 180.0)
-        #x = center[0] + 30 * math.sin((angle + 180) * math.pi / 180)
-        #y = center[1] + 30 * math.cos((angle + 180) * math.pi / 180)
         cv2.line(image, (center[1], center[0]), (int(y), int(x)), (255,255,255))
         return image
 
@@ -250,6 +186,7 @@ class color_detector:
         :return dist - relative distance to origin
         :return angle - relative from origin angle
         :return originPos - tuple (xPos, yPos, orientation)
+        :return -1, -1, -1, -1 if origin not found
         """
 
         originPos, originImage = self.getOrigin(image)
@@ -276,9 +213,6 @@ class color_detector:
             if dist > max:
                 max = dist
                 maxPoint = i
-        #print "Xtreme", points[maxPoint]
-        #cv2.imshow("images", self.drawPoint(image, points[maxPoint]))
-        #cv2.waitKey(0)
         return math.atan2(points[maxPoint][1] - yPos,points[maxPoint][0] - xPos) * 180 / math.pi
 
     def __getIntersection(self, points, image):
@@ -328,11 +262,8 @@ class color_detector:
         imOut = image.copy()
         result = []
         size = image.shape
-        #cv2.imshow("images", image)
-        #cv2.waitKey(0)
         first = ()
         last = ()
-        half = image.copy()
         for i in range(size[0]):
             for j in range(size[1]):
                 if image[i,j,0] > 0:
@@ -340,11 +271,6 @@ class color_detector:
                     else: last = (i, j)
         if first and last:
             cv2.line(imOut, (first[1], first[0]), (last[1], last[0]), (0,0,0), thickness=3)
-            #print "Removed"
-            half = self.drawPoint(imOut.copy(), first)
-            half = self.drawPoint(half, last)
-            #cv2.imshow("images", half)
-            #cv2.waitKey(0)
             result.append(first)
             result.append(last)
             first = ()
@@ -355,13 +281,10 @@ class color_detector:
                         else: last = (i,j)
             result.append(first)
             result.append(last)
-            #print "extremes"
             xPoints = image.copy()
             for p in result:
                 if p:
                     self.drawPoint(xPoints, p)
-            #cv2.imshow("images",np.hstack([half, xPoints]) )
-            #cv2.waitKey(0)
         return result
 
     def __blur(self, image, num):
@@ -397,9 +320,7 @@ class color_detector:
         gray = cv2.cvtColor(image.copy(), cv2.COLOR_BGR2GRAY)
         ret, gray = cv2.threshold(gray, 100, 255, cv2.THRESH_BINARY)
         size = np.size(gray)
-        #cv2.imshow("images", gray)
         skel = np.zeros(gray.shape, dtype="uint8")
-        #cv2.waitKey(0)
         element =  cv2.getStructuringElement(cv2.MORPH_CROSS, (3,3))
         done = False
         while not done:
@@ -427,9 +348,7 @@ class color_detector:
         :param image to edit
         :return image with manipulators whited out
         """
-        size = image.shape
         output = image.copy()
-        compSizes = []
         cMax = 0
         components = self.__getConnectedComponents(image)
         for cImage in components:
@@ -507,8 +426,6 @@ class color_detector:
                     output[i,j,:] = [255,255,255]
         if x and y:
             grad = self.__getGradient(x, y)
-            #cv2.imshow("images", np.hstack([image, output]))
-            #cv2.waitKey(0)
             if grad == float("inf"):
                 return 90
             return math.atan(grad) * 180 / math.pi
