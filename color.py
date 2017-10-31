@@ -113,8 +113,8 @@ class color_detector:
                 max = (x,y)
                 output[x,int(y),:] = [255,255,255]
             i += 1
-        cv2.imshow("images", output)
-        cv2.waitKey(0)
+        #cv2.imshow("images", output)
+        #cv2.waitKey(0)
         dist = math.sqrt(pow(float(max[0]-faceTuple[0]),2) + pow(float(max[1]-faceTuple[1]),2))
         return dist * 2 , output
 
