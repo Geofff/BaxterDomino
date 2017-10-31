@@ -27,12 +27,12 @@ class image_converter:
         self.distance = {}
         self.msg = np.array([])
         self.lastImage = np.array([])
+        self.active = True
 
     def display_image(self):
         print('Publishing to display')
         try:
             cv2.imshow("images", self.msg)
-            cv2.waitKey(1)
             msg = self.bridge.cv2_to_imgmsg(cv2.resize(self.msg, (1024, 600), interpolation=cv2.INTER_CUBIC), "bgr8")
             self.image_pub.publish(msg)
             rospy.sleep(1)
@@ -49,7 +49,7 @@ class image_converter:
             self.lastImage = self.bridge.imgmsg_to_cv2(data, "bgr8")
         except CvBridgeError as e:
             print(e)
-        if self.msg.shape[0] > 0:
+        if self.msg.shape[0] > 0 and self.active:
             self.msg = self.lastImage
             self.display_image()
 
@@ -72,7 +72,8 @@ class image_converter:
                     self.position = (nextDomino[0], nextDomino[1], nextDomino[2])
                 self.display_image()
                 self.msg = np.array([])
-                print("Domino found at" self.position)
+                print("Domino found at")
+                print( self.position)
             else:
                 print("No dominoes found")
 
@@ -87,7 +88,6 @@ def main(args):
     try:
         rospy.spin()
         for i in range(10):
-            cv2.waitKey(0)
             print("Displaying...")
             ic.getNextDomino()
     except KeyboardInterrupt:

@@ -1,5 +1,6 @@
 from detector import image_converter
 import argparse
+import tf
 import copy
 import sys
 import math
@@ -26,12 +27,13 @@ class Waypoints(object):
         self._arm = limb
         self._limb = baxter_interface.Limb(self._arm)
         self._gripper = baxter_interface.Gripper(self._arm)
+        self._cam = baxter_interface.CameraController(self._arm+'_hand_camera')
+        self._cam.gain = 1
         self._ik_srv = "ExternalTools/" + limb + "/PositionKinematicsNode/IKService"
         self._iksvc = rospy.ServiceProxy(self._ik_srv, SolvePositionIK)
         self._ikreq = SolvePositionIKRequest()
         self._hover_distance = distance
         self._num_loops = loops
-
 
         self._domino_source_approach = None
         self._domino_source = None
@@ -39,6 +41,7 @@ class Waypoints(object):
         self._calibration_point = None
         # Recorded waypoints
         self._waypoints = list()
+        self._source_point = None
 
         # Recording state
         self._is_recording = False
@@ -75,8 +78,8 @@ class Waypoints(object):
         """
         if value:
             print("Waypoint Recorded")
-            if self._domino_source_jp is None:
-            	self._domino_source_jp = self._limb.endpoint_pose()
+            if self._source_point is None:
+            	self._source_point = self._limb.endpoint_pose()
 	    	print("Domino source set")
             elif self._calibration_point is None:
                 self._calibration_point = self._limb.endpoint_pose()
@@ -99,9 +102,17 @@ class Waypoints(object):
 	waypointApproach = []
 	waypointJP = []
 	for i in range(self._numDominos):
-            waypointApproach.append(self._find_approach(self._waypoints[0], self._hover_distance,-0.05*i))
-            waypointJP.append(self._find_approach(self._waypoints[0], 0,-0.05*i))
+                pass
 	return waypointApproach, waypointJP
+
+    def generate_path(self, source, num):
+        points = []
+        for i in range(num):
+                p = []
+                p.append(self._find_approach(source, self._hover_distance,-0.05*i))
+                p.append(self._find_approach(source, 0,-0.05*i))
+                points.append(p)
+        return points
 
     def record(self):
         """
@@ -151,7 +162,17 @@ class Waypoints(object):
         if ang == 0:
 	        approach_pose.orientation.x = pose['orientation'].x
         else:
-	        approach_pose.orientation.x = ang
+                euler = tf.transformations.euler_from_quaternion(current_pose['orientation'])
+                roll = euler[0]
+                pitch = euler[1]
+                yaw = euler[2]
+       
+                qua = tf.transformations.quaternion_from_euler(roll, pitch, ang)
+                
+                approach_pose.orientation.x = qua[0]; 
+                approach_pose.orientation.y = qua[1]; 
+                approach_pose.orientation.z = qua[2]; 
+                approach_pose.orientation.w = qua[3]; 
                 
         pose = approach_pose
         hdr = Header(stamp=rospy.Time.now(), frame_id='base')
@@ -295,38 +316,110 @@ def main():
 
     rospy.init_node('image_converter', anonymous=True)
     waypoints = Waypoints(args.limb, args.distance, args.loops, args.calibrate)
+    '''
+    test_point = waypoints._limb.endpoint_pose()
+    ikreq = SolvePositionIKRequest()
+    pose = copy.deepcopy(test_point)
+    try:
+        pose['position'] = Point(
+                x=pose['position'][0],
+                y=pose['position'][1],
+                z=pose['position'][2])
+    except Exception:
+        pose['position'] = Point(
+                x=pose['position'].x,
+                y=pose['position'].y,
+                z=pose['position'].z)
+    approach_pose = Pose()
+    approach_pose.position = pose['position']
+    approach_pose.orientation = Quaternion(
+            x=2.0,
+            y=0.999649402929,
+            z=0.00737916180073,
+            w=0.00486450832011)
 
-
-    
-
+                
+    pose = approach_pose
+    hdr = Header(stamp=rospy.Time.now(), frame_id='base')
+    pose_req = PoseStamped(header=hdr, pose=pose)
+    ikreq.pose_stamp.append(pose_req)
+    rospy.wait_for_service(waypoints._ik_srv, 5.0)
+    resp = waypoints._iksvc(ikreq)
+    p = dict(zip(resp.joints[0].name, resp.joints[0].position))
+    waypoints._limb.move_to_joint_positions(p)
+    return'''
     # Begin example program
     waypoints.record()
     # Temp code to pickup placed dominos
-     
-
+    view_point = waypoints._limb.joint_angles()
+#    view_point_approach = waypoints._find_approach(view_point, 0, 0, 0)
+    view_point_approach = view_point
+    waypoints._limb.move_to_joint_positions(view_point_approach)
+    fake_dom_1 = [100.0, 0.0, 0.0]
+    fake_dom_2 = [100.0, 180.0, 0.0]
+    fake_dom_3 = [150.0, 90.0, 90.0]
     ic = image_converter()
+    ic.active = True
     print("Initialising...")
     print(waypoints._calibration_point)
+    num_waypoints = 4
+    waypoint_path = waypoints.generate_path(waypoints._source_point, num_waypoints)
+    waypointInd = 0
     try:
         while 1:
+                # Find domino to pick up
                 domino = ic.getNextDomino()
+                ic.active = False
                 if len(domino) != 3:
                         continue
-                camRot = -waypoints._calibration_point['orientation'].x
+                euler = tf.transformations.euler_from_quaternion(waypoints._calibration_point['orientation'])
+                roll = euler[0]
+                pitch = euler[1]
+                yaw = euler[2]
+                camRot = yaw 
+                print("Angles are Yaw: %f Pitch: %f Roll: %f" % (yaw, pitch, roll))
                 dx = math.cos(camRot+3.1415+math.radians(domino[1]))*domino[0]/1000
                 dy = math.sin(camRot+3.1415+math.radians(domino[1]))*domino[0]/1000
+                print("Domino is [%f] mm away. Normalised to baxter it is [%f:%f]m away" % (domino[0], dx, dy))
                 domAng = math.radians(domino[2])+camRot+3.1415
                 approach = waypoints._find_approach(waypoints._calibration_point, args.distance, dx, dy, domAng)
                 pos = waypoints._find_approach(waypoints._calibration_point, 0, dx, dy, domAng)
-                print(approach)        
+                waypoints._gripper.open()
                 waypoints._limb.move_to_joint_positions(approach)
                 waypoints._limb.move_to_joint_positions(pos)
-                print(domino)
+                waypoints._gripper.close()
+
+                rospy.sleep(1.0)
+
+                # Place Domino on path
+                waypoints._limb.move_to_joint_positions(waypoint_path[waypointInd][0])
+                waypoints._limb.move_to_joint_positions(waypoint_path[waypointInd][1])
+                waypoints._gripper.open()
+                rospy.sleep(1.0)
+                
+                waypoints._limb.move_to_joint_positions(waypoint_path[waypointInd][0])
+                waypointInd = waypointInd + 1
+                waypoints._limb.move_to_joint_positions(view_point_approach)
+
+                if (waypointInd > num_waypoints):
+                        # Time to knock over
+                        self._knock_approach = waypoints._find_approach(waypoints_path[0][1], 0.05, 0.05)
+	                self._knock_approach['left_w2']+=3.14159/2
+	                self._knock = waypoints._find_approach(waypoints_path[0][1], 0.05, -0.05)
+	                self._knock['left_w2']+=3.14159/2
+                        waypoints._gripper.close()
+                        rospy.sleep(1)
+                        waypoints._limb.move_to_joint_positions(knock_approach)
+                        waypoints._limb.move_to_joint_positions(knock)
+                        exit()
+                
+                
+                ic.active = True
     except KeyboardInterrupt:
         print("Shutting down")
-    cv2.destroyAllWindows()
 
     waypoints.playback()
 
 if __name__ == '__main__':
-    main()
+   main()
+

@@ -90,7 +90,9 @@ class color_detector:
                 self.drawLocation(outImage, (origin[0], origin[1]), origin[2])
                 self.drawLocation(outImage, (origin[0], origin[1]) , origin[2] + relAngle)
                 pixelDist, distImage = self.getLongEdgeLength(origin, originImage)
-                relDist *= 83/(pixelDist/2) #83 - length of long origin in mm
+                if pixelDist == 0:
+                        return ()
+                relDist *= 180/(pixelDist) #180 - length of long origin in mm
                 return (relDist, relAngle, relOrientation, outImage)
         return ()
 
@@ -127,7 +129,7 @@ class color_detector:
         output = self.__getOriginOnly(output)
         skel = self.__blur(self.__getSkeleton(output), 3)
         xtremes = self.__getExtremePoints(skel)
-        xPos, yPos = self.__getIntersection(xtremes, output)
+        xPos, yPos = self.__getIntersection(xtremes, output.copy())
         if xPos > -1:
             orientation = self.__getOrientationPoints(xPos, yPos, xtremes, image.copy())
             #originImage = self.drawLocation(image.copy(), (xPos, yPos), orientation)
@@ -174,7 +176,7 @@ class color_detector:
         imSize = image.shape
         point = (int(point[0]), int(point[1]))
         for i in range(-int(size/2), int(size/2)+1):
-            if point[0] + i < imSize[0] and point[1] + i < imSize[1]:
+            if point[0] + i < imSize[0] and point[1] + i < imSize[1]-1:
                 image[point[0] + i, point[1], :] = [255,255,255]
                 image[point[0], point[1] + i, :] = [255,255,255]
         return image
@@ -226,7 +228,7 @@ class color_detector:
         """
         if points:
             points = self.__reversePoints(points)
-            if len(points) == 4:
+            if len(points) == 4 and points[1][0] != points[0][0] and points[3][0] != points[2][0]:
                 cv2.line(image, points[0], points[1], (255,255,255))
                 cv2.line(image, points[2], points[3], (255, 255, 255))
                 #cv2.imshow("images", image)
@@ -606,7 +608,6 @@ def main():
     xPos, yPos, phi = cd.getOrigin(img)
     originImage = cd.drawLocation(img.copy(),(xPos, yPos), phi)
     cv2.imshow("images", np.hstack([img, originImage]))
-    cv2.waitKey(0)
     return 0
 
 if __name__ == '__main__':
