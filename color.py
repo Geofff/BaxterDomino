@@ -111,8 +111,8 @@ class color_detector:
                 max = (x,y)
                 output[x,int(y),:] = [255,255,255]
             i += 1
-        cv2.imshow("images", output)
-        cv2.waitKey(0)
+        #cv2.imshow("images", output)
+        #cv2.waitKey(0)
         dist = math.sqrt(pow(float(max[0]-faceTuple[0]),2) + pow(float(max[1]-faceTuple[1]),2))
         return dist * 2 , output
 
@@ -127,7 +127,7 @@ class color_detector:
         output = self.__getOriginOnly(output)
         skel = self.__blur(self.__getSkeleton(output), 3)
         xtremes = self.__getExtremePoints(skel)
-        xPos, yPos = self.__getIntersection(xtremes, output)
+        xPos, yPos = self.__getIntersection(xtremes, output.copy())
         if xPos > -1:
             orientation = self.__getOrientationPoints(xPos, yPos, xtremes, image.copy())
             #originImage = self.drawLocation(image.copy(), (xPos, yPos), orientation)
